@@ -4,6 +4,7 @@
  */
 
 import { OrchestratorAgent, AppStatus } from './orchestrator.js';
+import { DemoMode } from './demo.js';
 
 class SunSetterApp {
   private orchestrator: OrchestratorAgent;
@@ -59,6 +60,13 @@ class SunSetterApp {
     this.toggleBtn.addEventListener('click', () => {
       const mode = this.orchestrator.toggleRenderMode();
       this.toggleBtn.textContent = `Switch to ${mode === '2D' ? 'AR' : '2D'}`;
+    });
+
+    // Demo mode - show calculations with default location if user presses 'D' key
+    window.addEventListener('keydown', (event) => {
+      if (event.key.toLowerCase() === 'd') {
+        this.startDemoMode();
+      }
     });
 
     // Handle device orientation change
@@ -148,6 +156,25 @@ class SunSetterApp {
     
     // Toggle button only available when we have data
     this.toggleBtn.disabled = !status.samples;
+  }
+
+  private startDemoMode(): void {
+    console.log('Starting demo mode with San Francisco location...');
+    
+    // Create demo instance
+    const app = document.getElementById('app');
+    if (!app) return;
+    
+    const demo = new DemoMode(app);
+    demo.startDemo();
+    
+    // Update UI to show demo mode
+    this.updateStatus('Demo mode active (San Francisco)');
+    this.updateLocation({ lat: 37.7749, lon: -122.4194, accuracy: 10 });
+    
+    // Enable toggle button in demo mode
+    this.toggleBtn.disabled = false;
+    this.locationBtn.textContent = 'Get Real Location';
   }
 }
 
