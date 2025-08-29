@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sun Overlay AR</title>
+    <link rel="stylesheet" href="src/style.css">
+  </head>
+  <body>
+    <canvas id="bg"></canvas>
+    <div id="ui-container" style="position: fixed; top: 10px; left: 10px; z-index: 100; background-color: rgba(0,0,0,0.5); color: white; padding: 10px; border-radius: 5px; width: 300px;">
+      <button id="getLocationBtn">Get Location & Sun Data</button>
+      <div id="2d-view-container" style="margin-top: 10px;"></div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/suncalc@1.9.0/suncalc.js"></script>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
