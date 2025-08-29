@@ -147,22 +147,50 @@ export class OrchestratorAgent {
    * Start the rendering loop
    */
   private startRendering(samples: SunSample[]): void {
-    // Get current heading (fallback to 0 if not available)
-    let heading = 0;
-    
-    this.sensor.getHeading().then(h => heading = h).catch(() => {
+    this.sensor.getHeading().then(heading => {
+      this.renderer.updateData(samples, heading);
+      this.renderer.render2D(samples, heading);
+    }).catch(() => {
       console.warn('Could not get device heading, using default (North)');
+      this.renderer.updateData(samples, 0);
+      this.renderer.render2D(samples, 0);
     });
-
-    // Render in 2D mode
-    this.renderer.render2D(samples, heading);
   }
 
   /**
    * Toggle between 2D and AR modes
    */
-  toggleRenderMode(): '2D' | 'AR' {
-    return this.renderer.toggleMode();
+  async toggleRenderMode(): Promise<'2D' | 'AR'> {
+    const targetMode = this.renderer.currentMode === '2D' ? 'AR' : '2D';
+
+    if (targetMode === 'AR') {
+      try {
+        const stream = await this.sensor.startVideoStream();
+        this.renderer.toggleMode(stream);
+        this.renderer.startAnimationLoop();
+        this.startOrientationUpdates();
+        return 'AR';
+      } catch (error) {
+        this.handleError('Failed to start AR mode. Camera not available.');
+        if (this.renderer.currentMode === 'AR') {
+            this.renderer.toggleMode(); // switch back
+        }
+        return '2D';
+      }
+    } else { // Switching back to 2D
+      this.renderer.toggleMode();
+      return '2D';
+    }
+  }
+
+  private startOrientationUpdates(): void {
+    const handleOrientation = (event: DeviceOrientationEvent) => {
+      const heading = event.alpha ?? 0;
+      if (this.status.samples) {
+        this.renderer.updateData(this.status.samples, heading);
+      }
+    };
+    window.addEventListener('deviceorientation', handleOrientation, true);
   }
 
   /**
