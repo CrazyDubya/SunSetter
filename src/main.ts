@@ -57,9 +57,12 @@ class SunSetterApp {
     });
 
     // Toggle view button
-    this.toggleBtn.addEventListener('click', () => {
-      const mode = this.orchestrator.toggleRenderMode();
+    this.toggleBtn.addEventListener('click', async () => {
+      this.toggleBtn.disabled = true;
+      this.toggleBtn.textContent = 'Switching...';
+      const mode = await this.orchestrator.toggleRenderMode();
       this.toggleBtn.textContent = `Switch to ${mode === '2D' ? 'AR' : '2D'}`;
+      this.toggleBtn.disabled = false;
     });
 
     // Demo mode - show calculations with default location if user presses 'D' key

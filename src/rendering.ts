@@ -19,6 +19,10 @@ export class RenderingAgent {
   private mode: '2D' | 'AR' = '2D';
   private sunMesh: THREE.Mesh | null = null;
   private pathLine: THREE.Line | null = null;
+  private videoElement: HTMLVideoElement | null = null;
+  private videoTexture: THREE.VideoTexture | null = null;
+  private latestSamples: SunSample[] = [];
+  private latestHeading: number = 0;
 
   constructor(container: HTMLElement) {
     // Create canvas
@@ -26,6 +30,7 @@ export class RenderingAgent {
     this.canvas.style.width = '100%';
     this.canvas.style.height = '100%';
     container.appendChild(this.canvas);
+    this.videoElement = document.getElementById('cameraFeed') as HTMLVideoElement;
 
     // Initialize Three.js
     this.scene = new THREE.Scene();
@@ -62,10 +67,16 @@ export class RenderingAgent {
 
     // Create sun mesh
     const sunGeometry = new THREE.SphereGeometry(0.1, 16, 16);
-    const sunMaterial = new THREE.MeshBasicMaterial({ 
-      color: 0xffff00
+    const sunMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffff00,
+      fog: false
     });
     this.sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
+
+    // Add a light to the sun mesh to make it glow
+    const sunLight = new THREE.PointLight(0xffffff, 1.2, 100);
+    this.sunMesh.add(sunLight);
+
     this.scene.add(this.sunMesh);
 
     // Position camera
@@ -122,10 +133,10 @@ export class RenderingAgent {
 
     if (pathPoints.length > 1) {
       const pathGeometry = new THREE.BufferGeometry().setFromPoints(pathPoints);
-      const pathMaterial = new THREE.LineBasicMaterial({ 
-        color: 0xffff00, 
-        opacity: 0.7,
-        transparent: true 
+      const pathMaterial = new THREE.LineBasicMaterial({
+        color: 0xffff00,
+        opacity: 0.9,
+        transparent: true
       });
       this.pathLine = new THREE.Line(pathGeometry, pathMaterial);
       this.scene.add(this.pathLine);
@@ -203,20 +214,113 @@ export class RenderingAgent {
     }
   }
 
+  startAnimationLoop() {
+    if (this.animationId !== null) {
+      // Loop is already running
+      return;
+    }
+
+    const animate = () => {
+      this.animationId = requestAnimationFrame(animate);
+
+      if (this.mode === 'AR') {
+        this.renderAR(this.latestSamples, this.latestHeading);
+      }
+      // No need to call render2D continuously as it's not animated in the same way.
+      // The orchestrator can call it when data changes.
+
+      if (this.renderer) {
+        this.renderer.render(this.scene, this.camera);
+      }
+    };
+
+    animate();
+  }
+
+  public updateData(samples: SunSample[], heading: number) {
+      this.latestSamples = samples;
+      this.latestHeading = heading;
+  }
+
   /**
    * Render in AR mode (camera overlay)
    */
-  renderAR(samples: SunSample[], _pose?: { quat: [number, number, number, number] }, _options?: RenderOptions) {
-    // For now, fallback to 2D mode
-    // AR implementation would require camera access and pose tracking
-    this.render2D(samples, 0);
+  renderAR(samples: SunSample[], heading: number) {
+    if (!this.renderer || !this.sunMesh) return;
+
+    // Clear previous path
+    if (this.pathLine) {
+      this.scene.remove(this.pathLine);
+    }
+
+    // Find current sun position
+    const now = Date.now();
+    const currentSample = this.findClosestSample(samples, now);
+
+    if (currentSample) {
+      // Convert azimuth/elevation to 3D position
+      const sunPos = this.azElTo3D(currentSample.az - heading, currentSample.el, 5);
+      this.sunMesh.position.copy(sunPos);
+    }
+
+    // Create sun path line
+    const pathPoints: THREE.Vector3[] = [];
+    samples.forEach(sample => {
+      if (sample.el > -10) { // Only show when sun is near or above horizon
+        const pos = this.azElTo3D(sample.az - heading, sample.el, 4.8);
+        pathPoints.push(pos);
+      }
+    });
+
+    if (pathPoints.length > 1) {
+      const pathGeometry = new THREE.BufferGeometry().setFromPoints(pathPoints);
+      const pathMaterial = new THREE.LineBasicMaterial({
+        color: 0xffff00,
+        opacity: 0.9,
+        transparent: true
+      });
+      this.pathLine = new THREE.Line(pathGeometry, pathMaterial);
+      this.scene.add(this.pathLine);
+    }
   }
 
   /**
    * Toggle between 2D and AR modes
    */
-  toggleMode(): '2D' | 'AR' {
+  get currentMode(): '2D' | 'AR' {
+    return this.mode;
+  }
+
+  toggleMode(stream?: MediaStream): '2D' | 'AR' {
     this.mode = this.mode === '2D' ? 'AR' : '2D';
+
+    if (this.mode === 'AR' && stream && this.videoElement) {
+      this.videoElement.srcObject = stream;
+      this.videoElement.style.display = 'block';
+
+      if (this.renderer) {
+        this.videoTexture = new THREE.VideoTexture(this.videoElement);
+        this.scene.background = this.videoTexture;
+        this.renderer.setClearColor(0x000000, 0);
+      }
+    } else {
+      if (this.videoElement) {
+        this.videoElement.style.display = 'none';
+        if (this.videoElement.srcObject) {
+            (this.videoElement.srcObject as MediaStream).getTracks().forEach(track => track.stop());
+            this.videoElement.srcObject = null;
+        }
+      }
+      if (this.renderer) {
+        this.scene.background = new THREE.Color(0x87CEEB);
+        this.renderer.setClearColor(0x87CEEB, 1);
+      }
+      if (this.videoTexture) {
+          this.videoTexture.dispose();
+          this.videoTexture = null;
+      }
+    }
+
     return this.mode;
   }
 
