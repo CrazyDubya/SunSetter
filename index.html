@@ -4,6 +4,23 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SunSetter - AR Sun Overlay</title>
+    
+    <!-- PWA Meta Tags -->
+    <meta name="application-name" content="SunSetter - AR Sun Tracker">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="SunSetter">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="msapplication-TileColor" content="#000000">
+    <meta name="theme-color" content="#FF6600">
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/public/manifest.json">
+    
+    <!-- Icons -->
+    <link rel="icon" type="image/svg+xml" href="/public/icons/icon.svg">
+    <link rel="apple-touch-icon" href="/public/icons/icon.svg">
+    
     <style>
         body {
             margin: 0;
@@ -52,6 +69,22 @@
             <div>Sun: <span id="sunText">Calculating...</span></div>
         </div>
     </div>
+    
     <script type="module" src="/src/main.ts"></script>
+    
+    <script>
+        // Register Service Worker for PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/public/sw.js')
+                    .then(function(registration) {
+                        console.log('Service Worker registered successfully: ', registration.scope);
+                    })
+                    .catch(function(error) {
+                        console.log('Service Worker registration failed: ', error);
+                    });
+            });
+        }
+    </script>
 </body>
 </html>
