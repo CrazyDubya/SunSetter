@@ -175,9 +175,29 @@ export class SensorAgent {
   }
 
   /**
+   * Start video stream for AR
+   */
+  async startVideoStream(constraints: MediaStreamConstraints = { video: { facingMode: 'environment' }, audio: false }): Promise<MediaStream> {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new SensorError('Camera API not supported', 'unavailable');
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      return stream;
+    } catch (error) {
+      if (error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError')) {
+        throw new SensorError('Camera permission denied', 'permission');
+      } else {
+        throw new SensorError('Could not access camera', 'unavailable');
+      }
+    }
+  }
+
+  /**
    * Request permission for sensors
    */
-  async requestPermission(type: 'geolocation' | 'orientation'): Promise<boolean> {
+  async requestPermission(type: 'geolocation' | 'orientation' | 'camera'): Promise<boolean> {
     try {
       switch (type) {
         case 'geolocation':
@@ -185,6 +205,9 @@ export class SensorAgent {
           return true;
         case 'orientation':
           await this.getOrientation();
+          return true;
+        case 'camera':
+          await this.startVideoStream();
           return true;
         default:
           return false;
