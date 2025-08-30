@@ -1,13 +1,14 @@
 // Service Worker for SunSetter PWA
 
 const CACHE_NAME = 'sunsetter-pwa-v1';
-const URLS:TO_CACHE = [
-  '/',
-  '/index.html',
-  '/src/main.ts', // Will be compiled to JS in prod
-  '/public/manifest.json',
-  '/public/icons/icon-192x192.png',
-  '/public/icons/icon-512x512.png'
+const URLS_TO_CACHE = [
+  '/SunSetter/',
+  '/SunSetter/index.html',
+  '/SunSetter/assets/main.js', // Vite compiled output
+  '/SunSetter/manifest.json',
+  '/SunSetter/icons/icon-192x192.png',
+  '/SunSetter/icons/icon-512x512.png',
+  '/SunSetter/icons/icon.svg'
 ];
 
 self.addEventListener('install', (event) => {

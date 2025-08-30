@@ -12,6 +12,7 @@ class SunSetterApp {
   private locationElement: HTMLElement;
   private sunElement: HTMLElement;
   private locationBtn: HTMLButtonElement;
+  private cameraBtn: HTMLButtonElement;
   private toggleBtn: HTMLButtonElement;
 
   constructor() {
@@ -25,6 +26,7 @@ class SunSetterApp {
     this.locationElement = document.getElementById('locationText')!;
     this.sunElement = document.getElementById('sunText')!;
     this.locationBtn = document.getElementById('locationBtn') as HTMLButtonElement;
+    this.cameraBtn = document.getElementById('cameraBtn') as HTMLButtonElement;
     this.toggleBtn = document.getElementById('toggleView') as HTMLButtonElement;
 
     // Initialize orchestrator
@@ -54,6 +56,29 @@ class SunSetterApp {
       
       this.locationBtn.disabled = false;
       this.locationBtn.textContent = success ? 'Update Location' : 'Retry Location';
+    });
+
+    // Camera permission button
+    this.cameraBtn.addEventListener('click', async () => {
+      this.cameraBtn.disabled = true;
+      this.cameraBtn.textContent = 'Requesting Camera...';
+      
+      try {
+        // Request camera permission explicitly
+        const hasPermission = await this.orchestrator['sensor'].requestCameraPermission();
+        
+        if (hasPermission) {
+          this.cameraBtn.style.display = 'none';
+          this.updateStatus('Camera permission granted - AR mode available');
+        } else {
+          this.cameraBtn.textContent = 'Camera Denied - Try Again';
+          this.cameraBtn.disabled = false;
+        }
+      } catch (error) {
+        console.error('Camera permission request failed:', error);
+        this.cameraBtn.textContent = 'Camera Error - Retry';
+        this.cameraBtn.disabled = false;
+      }
     });
 
     // Toggle view button
@@ -157,8 +182,18 @@ class SunSetterApp {
       this.locationBtn.disabled = false;
     }
     
+    // Show camera button if we have location but AR might need permissions
+    if (status.location && !this.cameraPermissionGranted()) {
+      this.cameraBtn.style.display = 'inline-block';
+    }
+    
     // Toggle button only available when we have data
     this.toggleBtn.disabled = !status.samples;
+  }
+
+  private cameraPermissionGranted(): boolean {
+    // Simple check - if camera button is hidden, permission was granted
+    return this.cameraBtn.style.display === 'none';
   }
 
   private startDemoMode(): void {

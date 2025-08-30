@@ -248,40 +248,91 @@ export class RenderingAgent {
   renderAR(samples: SunSample[], heading: number) {
     if (!this.renderer || !this.sunMesh) return;
 
-    // Clear previous path
+    // Clear previous path and markers
     if (this.pathLine) {
       this.scene.remove(this.pathLine);
     }
+    
+    // Clean up old time markers
+    const markersToRemove = this.scene.children.filter(child => child.userData.isTimeMarker);
+    markersToRemove.forEach(marker => this.scene.remove(marker));
 
     // Find current sun position
     const now = Date.now();
     const currentSample = this.findClosestSample(samples, now);
 
     if (currentSample) {
-      // Convert azimuth/elevation to 3D position
+      // Convert azimuth/elevation to 3D position for AR overlay
       const sunPos = this.azElTo3D(currentSample.az - heading, currentSample.el, 5);
       this.sunMesh.position.copy(sunPos);
+      
+      // Ensure sun is visible in AR mode
+      this.sunMesh.visible = currentSample.el > -10; // Only show when sun is above horizon
+      
+      // Make sun more prominent in AR mode
+      const sunMaterial = this.sunMesh.material as THREE.MeshBasicMaterial;
+      sunMaterial.color.setHex(0xffff00);
+      sunMaterial.emissive.setHex(0xff6600);
+      sunMaterial.transparent = false;
+      sunMaterial.opacity = 1.0;
     }
 
-    // Create sun path line
+    // Create enhanced sun path line for AR
     const pathPoints: THREE.Vector3[] = [];
-    samples.forEach(sample => {
-      if (sample.el > -10) { // Only show when sun is near or above horizon
-        const pos = this.azElTo3D(sample.az - heading, sample.el, 4.8);
-        pathPoints.push(pos);
-      }
+    const visibleSamples = samples.filter(sample => sample.el > -10);
+    
+    visibleSamples.forEach(sample => {
+      const pos = this.azElTo3D(sample.az - heading, sample.el, 4.8);
+      pathPoints.push(pos);
     });
 
     if (pathPoints.length > 1) {
       const pathGeometry = new THREE.BufferGeometry().setFromPoints(pathPoints);
       const pathMaterial = new THREE.LineBasicMaterial({
-        color: 0xffff00,
-        opacity: 0.9,
-        transparent: true
+        color: 0xffaa00,
+        opacity: 0.8,
+        transparent: true,
+        linewidth: 3
       });
       this.pathLine = new THREE.Line(pathGeometry, pathMaterial);
       this.scene.add(this.pathLine);
     }
+
+    // Add time markers and labels for better AR experience
+    this.addTimeMarkers(visibleSamples, heading);
+
+    // Ensure proper rendering with camera background
+    if (this.videoTexture && this.videoElement) {
+      this.videoTexture.needsUpdate = true;
+    }
+  }
+
+  /**
+   * Add time markers along the sun path for AR mode
+   */
+  private addTimeMarkers(samples: SunSample[], heading: number) {
+    // Add markers every 2 hours
+    const markerSamples = samples.filter((sample, index) => index % 24 === 0); // Every 2 hours (assuming 5-minute intervals)
+    
+    markerSamples.forEach(sample => {
+      const markerPos = this.azElTo3D(sample.az - heading, sample.el, 4.9);
+      
+      // Create a small sphere marker
+      const markerGeometry = new THREE.SphereGeometry(0.05, 8, 8);
+      const markerMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.8
+      });
+      const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+      marker.position.copy(markerPos);
+      
+      // Add marker to scene
+      this.scene.add(marker);
+      
+      // Store marker for cleanup (simplified approach)
+      marker.userData.isTimeMarker = true;
+    });
   }
 
   /**

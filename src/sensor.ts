@@ -175,7 +175,7 @@ export class SensorAgent {
   }
 
   /**
-   * Start video stream for AR
+   * Start video stream for AR with enhanced iOS support
    */
   async startVideoStream(constraints: MediaStreamConstraints = { video: { facingMode: 'environment' }, audio: false }): Promise<MediaStream> {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -183,14 +183,92 @@ export class SensorAgent {
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      return stream;
+      // Enhanced constraints for iOS compatibility
+      const enhancedConstraints: MediaStreamConstraints = {
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1920, max: 1920 },
+          height: { ideal: 1080, max: 1080 },
+          frameRate: { ideal: 30, max: 60 },
+          ...constraints.video as MediaTrackConstraints
+        },
+        audio: false
+      };
+
+      // First attempt with enhanced constraints
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(enhancedConstraints);
+        console.log('Camera stream started with enhanced constraints');
+        return stream;
+      } catch (enhancedError) {
+        console.warn('Enhanced constraints failed, falling back to basic constraints:', enhancedError);
+        
+        // Fallback to basic constraints for older devices
+        const basicConstraints: MediaStreamConstraints = {
+          video: { facingMode: 'environment' },
+          audio: false
+        };
+        
+        const stream = await navigator.mediaDevices.getUserMedia(basicConstraints);
+        console.log('Camera stream started with basic constraints');
+        return stream;
+      }
     } catch (error) {
-      if (error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError')) {
-        throw new SensorError('Camera permission denied', 'permission');
+      console.error('Camera access failed:', error);
+      
+      if (error instanceof DOMException) {
+        switch (error.name) {
+          case 'NotAllowedError':
+          case 'PermissionDeniedError':
+            throw new SensorError('Camera permission denied. Please allow camera access in your browser settings.', 'permission');
+          case 'NotFoundError':
+          case 'DevicesNotFoundError':
+            throw new SensorError('No camera found on this device', 'unavailable');
+          case 'NotReadableError':
+          case 'TrackStartError':
+            throw new SensorError('Camera is already in use by another application', 'unavailable');
+          case 'OverconstrainedError':
+          case 'ConstraintNotSatisfiedError':
+            throw new SensorError('Camera does not meet the required specifications', 'unavailable');
+          case 'SecurityError':
+            throw new SensorError('Camera access blocked by security policy. Please use HTTPS.', 'permission');
+          case 'AbortError':
+            throw new SensorError('Camera access request was cancelled', 'unavailable');
+          default:
+            throw new SensorError(`Camera error: ${error.message}`, 'unavailable');
+        }
       } else {
         throw new SensorError('Could not access camera', 'unavailable');
       }
+    }
+  }
+
+  /**
+   * Request camera permissions explicitly for iOS
+   */
+  async requestCameraPermission(): Promise<boolean> {
+    try {
+      // Check if camera is available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.warn('Camera API not supported');
+        return false;
+      }
+
+      // For iOS, we need to request permission through getUserMedia
+      // This will trigger the permission dialog
+      const testStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' },
+        audio: false
+      });
+      
+      // Stop the test stream immediately - we just wanted the permission
+      testStream.getTracks().forEach(track => track.stop());
+      
+      console.log('Camera permission granted');
+      return true;
+    } catch (error) {
+      console.error('Camera permission request failed:', error);
+      return false;
     }
   }
 
@@ -207,8 +285,7 @@ export class SensorAgent {
           await this.getOrientation();
           return true;
         case 'camera':
-          await this.startVideoStream();
-          return true;
+          return await this.requestCameraPermission();
         default:
           return false;
       }
