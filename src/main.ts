@@ -39,6 +39,9 @@ class SunSetterApp {
 
     this.setupEventListeners();
     this.initialize();
+    
+    // Start regular moon updates
+    this.startMoonUpdates();
   }
 
   private async initialize(): Promise<void> {
@@ -170,6 +173,8 @@ class SunSetterApp {
     
     if (status.location) {
       this.updateLocation(status.location);
+      // Update moon info when location is available
+      this.updateMoonInfo(status.location, Date.now());
     }
     
     if (status.samples) {
@@ -510,14 +515,21 @@ class SunSetterApp {
 
   private updateMoonInfo(location: { lat: number; lon: number }, timestamp: number): void {
     try {
-      const celestialData = this.orchestrator['ephemeris'].getCelestialDataForTime(
+      // Access ephemeris properly through the orchestrator
+      const ephemeris = (this.orchestrator as any).ephemeris;
+      if (!ephemeris) {
+        console.error('Ephemeris agent not available');
+        return;
+      }
+      
+      const celestialData = ephemeris.getCelestialDataForTime(
         location.lat, 
         location.lon, 
         timestamp
       );
       
       const moonElement = document.getElementById('moonText') as HTMLSpanElement;
-      if (moonElement && celestialData.moon) {
+      if (moonElement && celestialData && celestialData.moon) {
         const moon = celestialData.moon;
         const az = Math.round(moon.az);
         const el = Math.round(moon.el * 10) / 10;
@@ -528,15 +540,31 @@ class SunSetterApp {
         const visibility = isVisible ? '🌙 visible' : '🌑 below horizon';
         
         moonElement.textContent = `${direction} ${az}°, ${el}° elevation - ${visibility} (${illumination}% lit, phase ${phase}%)`;
+      } else {
+        console.log('Moon element not found or no moon data available');
       }
     } catch (error) {
       console.error('Failed to update moon info:', error);
+      const moonElement = document.getElementById('moonText') as HTMLSpanElement;
+      if (moonElement) {
+        moonElement.textContent = 'Moon data unavailable';
+      }
     }
   }
 
   private formatDateTime(timestamp: number): string {
     const date = new Date(timestamp);
     return date.toLocaleString();
+  }
+
+  private startMoonUpdates(): void {
+    // Update moon info every 30 seconds
+    setInterval(() => {
+      const location = this.orchestrator.getCurrentLocation();
+      if (location) {
+        this.updateMoonInfo(location, Date.now());
+      }
+    }, 30000);
   }
 }
 

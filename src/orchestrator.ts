@@ -237,6 +237,13 @@ export class OrchestratorAgent {
       const heading = event.alpha ?? 0;
       if (this.status.samples) {
         this.renderer.updateData(this.status.samples, heading);
+        // Force re-render in current mode
+        if (this.renderer.currentMode === 'AR') {
+          // AR mode rendering is handled by the animation loop
+          // Just update the data, the loop will pick it up
+        } else {
+          this.renderer.render2D(this.status.samples, heading);
+        }
       }
     };
     window.addEventListener('deviceorientation', handleOrientation, true);

@@ -26,6 +26,11 @@ export class RenderingAgent {
   private globeGroup: THREE.Group | null = null;
   private moonMesh: THREE.Mesh | null = null;
   private userLocationMesh: THREE.Mesh | null = null;
+  
+  // AR optimization tracking
+  private lastARHeading: number = -999;
+  private lastARSamples: SunSample[] = [];
+  private arObjectsCreated: boolean = false;
 
   constructor(container: HTMLElement) {
     // Create canvas
@@ -267,47 +272,71 @@ export class RenderingAgent {
   }
 
   /**
-   * Render in AR mode (camera overlay)
+   * Render in AR mode (camera overlay) - optimized version
    */
   renderAR(samples: SunSample[], heading: number) {
     if (!this.renderer || !this.sunMesh) return;
 
-    // Clear previous path and markers
-    if (this.pathLine) {
-      this.scene.remove(this.pathLine);
+    // Only recreate AR objects if heading changed significantly or samples changed
+    const headingChanged = Math.abs(heading - this.lastARHeading) > 2; // 2 degree threshold
+    const samplesChanged = samples.length !== this.lastARSamples.length || 
+                          !this.arObjectsCreated;
+
+    if (headingChanged || samplesChanged) {
+      // Clear previous path and markers only when needed
+      if (this.pathLine) {
+        this.scene.remove(this.pathLine);
+      }
+      
+      // Clean up old time markers and sun path objects
+      const markersToRemove = this.scene.children.filter(child => 
+        child.userData.isTimeMarker || 
+        child.userData.isSunPath || 
+        child.userData.isSunriseMarker || 
+        child.userData.isSunsetMarker
+      );
+      markersToRemove.forEach(marker => this.scene.remove(marker));
+
+      // Create complete sun path (above AND below horizon)
+      this.createCompleteSunPath(samples, heading);
+      
+      // Add sunrise/sunset markers
+      this.addSunriseSunsetMarkers(samples, heading);
+      
+      // Add time markers every 2 hours
+      this.addTimeMarkers(samples, heading);
+
+      // Update tracking variables
+      this.lastARHeading = heading;
+      this.lastARSamples = [...samples];
+      this.arObjectsCreated = true;
     }
-    
-    // Clean up old time markers and sun path objects
-    const markersToRemove = this.scene.children.filter(child => 
-      child.userData.isTimeMarker || 
-      child.userData.isSunPath || 
-      child.userData.isSunriseMarker || 
-      child.userData.isSunsetMarker ||
-      child.userData.isCurrentSunMarker
-    );
-    markersToRemove.forEach(marker => this.scene.remove(marker));
 
-    // Find current sun position
-    const now = Date.now();
-    const currentSample = this.findClosestSample(samples, now);
-
-    if (currentSample) {
-      // Create enhanced animated current sun marker
-      this.createAnimatedCurrentSun(currentSample, heading, now);
-    }
-
-    // Create complete sun path (above AND below horizon)
-    this.createCompleteSunPath(samples, heading);
-    
-    // Add sunrise/sunset markers
-    this.addSunriseSunsetMarkers(samples, heading);
-    
-    // Add time markers every 2 hours
-    this.addTimeMarkers(samples, heading);
+    // Always update current sun position (this should move with device)
+    this.updateCurrentSunInAR(samples, heading);
 
     // Ensure proper rendering with camera background
     if (this.videoTexture && this.videoElement) {
       this.videoTexture.needsUpdate = true;
+    }
+  }
+
+  /**
+   * Update only the current sun position in AR mode (called every frame)
+   */
+  private updateCurrentSunInAR(samples: SunSample[], heading: number) {
+    const now = Date.now();
+    const currentSample = this.findClosestSample(samples, now);
+
+    if (currentSample) {
+      // Remove old current sun marker
+      const oldMarkers = this.scene.children.filter(child => 
+        child.userData.isCurrentSunMarker
+      );
+      oldMarkers.forEach(marker => this.scene.remove(marker));
+
+      // Create new current sun marker
+      this.createAnimatedCurrentSun(currentSample, heading, now);
     }
   }
 
@@ -682,6 +711,11 @@ export class RenderingAgent {
 
   toggleMode(stream?: MediaStream): '2D' | 'AR' {
     this.mode = this.mode === '2D' ? 'AR' : '2D';
+    
+    // Reset AR tracking when switching modes
+    this.lastARHeading = -999;
+    this.lastARSamples = [];
+    this.arObjectsCreated = false;
 
     if (this.mode === 'AR' && stream && this.videoElement) {
       // AR mode - hide globe, show camera
