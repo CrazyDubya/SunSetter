@@ -23,6 +23,8 @@ export class OrchestratorAgent {
   private status: AppStatus = { state: 'init', confidence: 0 };
   private statusCallbacks: ((status: AppStatus) => void)[] = [];
   private currentStream: MediaStream | null = null;
+  private currentTimestamp: number = Date.now();
+  private currentLocation: LocationData | null = null;
 
   constructor(container: HTMLElement) {
     this.ephemeris = new EphemerisAgent();
@@ -71,6 +73,7 @@ export class OrchestratorAgent {
         location 
       });
       
+      this.currentLocation = location;
       await this.computeAndRender(location);
       return true;
       
@@ -306,6 +309,99 @@ export class OrchestratorAgent {
     } else {
       return '2d'; // Use 2D mode
     }
+  }
+
+  /**
+   * Set time for celestial calculations
+   */
+  setTime(timestamp: number): void {
+    this.currentTimestamp = timestamp;
+    if (this.currentLocation) {
+      this.updateCelestialData();
+    }
+  }
+
+  /**
+   * Jump to next sunrise
+   */
+  jumpToNextSunrise(): { time: number; azimuth: number } | null {
+    if (!this.currentLocation) return null;
+    
+    const sunrise = this.ephemeris.findNextSunrise(
+      this.currentLocation.lat, 
+      this.currentLocation.lon, 
+      this.currentTimestamp
+    );
+    
+    if (sunrise.time > 0) {
+      this.setTime(sunrise.time);
+      return sunrise;
+    }
+    
+    return null;
+  }
+
+  /**
+   * Jump to next sunset
+   */
+  jumpToNextSunset(): { time: number; azimuth: number } | null {
+    if (!this.currentLocation) return null;
+    
+    const sunset = this.ephemeris.findNextSunset(
+      this.currentLocation.lat, 
+      this.currentLocation.lon, 
+      this.currentTimestamp
+    );
+    
+    if (sunset.time > 0) {
+      this.setTime(sunset.time);
+      return sunset;
+    }
+    
+    return null;
+  }
+
+  /**
+   * Return to current time
+   */
+  returnToNow(): void {
+    this.currentTimestamp = Date.now();
+    if (this.currentLocation) {
+      this.updateCelestialData();
+    }
+  }
+
+  /**
+   * Update celestial data for current time and location
+   */
+  private updateCelestialData(): void {
+    if (!this.currentLocation) return;
+    
+    const celestialData = this.ephemeris.getCelestialDataForTime(
+      this.currentLocation.lat,
+      this.currentLocation.lon,
+      this.currentTimestamp
+    );
+    
+    this.renderer.updateCelestialPositions(
+      celestialData, 
+      this.currentLocation.lat, 
+      this.currentLocation.lon
+    );
+  }
+
+  /**
+   * Get current timestamp
+   */
+  getCurrentTimestamp(): number {
+    return this.currentTimestamp;
+  }
+
+  /**
+   * Get current location
+   */
+  getCurrentLocation(): LocationData | null {
+    return this.currentLocation;
   }
 
   /**

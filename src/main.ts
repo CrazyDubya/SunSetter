@@ -160,6 +160,9 @@ class SunSetterApp {
         // Could trigger a re-render here if needed
       }, 500);
     });
+
+    // Time navigation controls
+    this.setupTimeNavigation();
   }
 
   private handleStatusUpdate(status: AppStatus): void {
@@ -394,6 +397,146 @@ class SunSetterApp {
       console.error('Error clearing caches:', error);
       throw error;
     }
+  }
+
+  private setupTimeNavigation(): void {
+    const timeNavBtn = document.getElementById('timeNavBtn') as HTMLButtonElement;
+    const timeControls = document.getElementById('timeControls') as HTMLDivElement;
+    const closeTimeBtn = document.getElementById('closeTimeBtn') as HTMLButtonElement;
+    const dateTimePicker = document.getElementById('dateTimePicker') as HTMLInputElement;
+    const nextSunriseBtn = document.getElementById('nextSunriseBtn') as HTMLButtonElement;
+    const nextSunsetBtn = document.getElementById('nextSunsetBtn') as HTMLButtonElement;
+    const nowBtn = document.getElementById('nowBtn') as HTMLButtonElement;
+    const moonElement = document.getElementById('moonText') as HTMLSpanElement;
+
+    if (!timeNavBtn || !timeControls || !closeTimeBtn || !dateTimePicker || 
+        !nextSunriseBtn || !nextSunsetBtn || !nowBtn || !moonElement) {
+      console.warn('Time navigation elements not found');
+      return;
+    }
+
+    // Toggle time navigation panel
+    timeNavBtn.addEventListener('click', () => {
+      const isVisible = timeControls.style.display !== 'none';
+      timeControls.style.display = isVisible ? 'none' : 'block';
+      
+      if (!isVisible) {
+        // Set current time in date picker
+        const now = new Date();
+        const localDateTime = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+        dateTimePicker.value = localDateTime;
+      }
+    });
+
+    // Close time navigation panel
+    closeTimeBtn.addEventListener('click', () => {
+      timeControls.style.display = 'none';
+    });
+
+    // Date/time picker change
+    dateTimePicker.addEventListener('change', () => {
+      const selectedTime = new Date(dateTimePicker.value).getTime();
+      if (!isNaN(selectedTime)) {
+        this.orchestrator.setTime(selectedTime);
+        this.updateTimeInfo(selectedTime);
+      }
+    });
+
+    // Next sunrise button
+    nextSunriseBtn.addEventListener('click', () => {
+      const result = this.orchestrator.jumpToNextSunrise();
+      if (result) {
+        this.updateTimeInfo(result.time);
+        this.showSuccessMessage(`Next sunrise: ${this.formatDateTime(result.time)} at ${Math.round(result.azimuth)}° azimuth`);
+        
+        // Update date picker
+        const date = new Date(result.time);
+        const localDateTime = new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+        dateTimePicker.value = localDateTime;
+      } else {
+        this.showSuccessMessage('Could not find next sunrise');
+      }
+    });
+
+    // Next sunset button
+    nextSunsetBtn.addEventListener('click', () => {
+      const result = this.orchestrator.jumpToNextSunset();
+      if (result) {
+        this.updateTimeInfo(result.time);
+        this.showSuccessMessage(`Next sunset: ${this.formatDateTime(result.time)} at ${Math.round(result.azimuth)}° azimuth`);
+        
+        // Update date picker
+        const date = new Date(result.time);
+        const localDateTime = new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+        dateTimePicker.value = localDateTime;
+      } else {
+        this.showSuccessMessage('Could not find next sunset');
+      }
+    });
+
+    // Return to now button
+    nowBtn.addEventListener('click', () => {
+      this.orchestrator.returnToNow();
+      this.updateTimeInfo(Date.now());
+      this.showSuccessMessage('Returned to current time');
+      
+      // Reset date picker to current time
+      const now = new Date();
+      const localDateTime = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+      dateTimePicker.value = localDateTime;
+    });
+
+    // Update moon display every second when time controls are visible
+    const updateMoonDisplay = () => {
+      if (timeControls.style.display !== 'none') {
+        const location = this.orchestrator.getCurrentLocation();
+        if (location) {
+          const timestamp = this.orchestrator.getCurrentTimestamp();
+          // This will trigger moon info update through the status callback
+          this.updateMoonInfo(location, timestamp);
+        }
+      }
+    };
+    
+    setInterval(updateMoonDisplay, 1000);
+  }
+
+  private updateTimeInfo(timestamp: number): void {
+    const location = this.orchestrator.getCurrentLocation();
+    if (location) {
+      this.updateMoonInfo(location, timestamp);
+    }
+  }
+
+  private updateMoonInfo(location: { lat: number; lon: number }, timestamp: number): void {
+    try {
+      const celestialData = this.orchestrator['ephemeris'].getCelestialDataForTime(
+        location.lat, 
+        location.lon, 
+        timestamp
+      );
+      
+      const moonElement = document.getElementById('moonText') as HTMLSpanElement;
+      if (moonElement && celestialData.moon) {
+        const moon = celestialData.moon;
+        const az = Math.round(moon.az);
+        const el = Math.round(moon.el * 10) / 10;
+        const phase = Math.round(moon.phase * 100);
+        const illumination = Math.round(moon.illumination * 100);
+        const direction = this.getCardinalDirection(az);
+        const isVisible = moon.el > -6; // Moon visible threshold
+        const visibility = isVisible ? '🌙 visible' : '🌑 below horizon';
+        
+        moonElement.textContent = `${direction} ${az}°, ${el}° elevation - ${visibility} (${illumination}% lit, phase ${phase}%)`;
+      }
+    } catch (error) {
+      console.error('Failed to update moon info:', error);
+    }
+  }
+
+  private formatDateTime(timestamp: number): string {
+    const date = new Date(timestamp);
+    return date.toLocaleString();
   }
 }
 

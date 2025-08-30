@@ -8,6 +8,7 @@ export interface SunSample {
   az: number;     // azimuth in degrees (0=N, 90=E, 180=S, 270=W)
   el: number;     // elevation in degrees (0=horizon, 90=zenith)
   error?: string; // optional error message
+  mass?: number;  // relative visual mass/size
 }
 
 export interface MoonSample {
@@ -16,6 +17,8 @@ export interface MoonSample {
   el: number;     // elevation in degrees
   phase: number;  // moon phase (0=new, 0.5=full, 1=new)
   illumination: number; // fraction illuminated (0-1)
+  mass: number;   // relative visual mass/size
+  distance: number; // distance from Earth in km
 }
 
 export interface CelestialData {
@@ -51,7 +54,8 @@ export class EphemerisAgent {
       samples.push({
         t,
         az: position.azimuth,
-        el: position.elevation
+        el: position.elevation,
+        mass: this.calculateSunMass(t) // Add sun mass calculation
       });
     }
     
@@ -198,8 +202,8 @@ export class EphemerisAgent {
       0.278 * Math.sin(this.degToRad(Mp - F)) +
       0.173 * Math.sin(this.degToRad(2 * D - F));
 
-    // Moon's distance calculation (unused but part of algorithm)
-    // const distance = 385000 - 20905 * Math.cos(this.degToRad(Mp));
+    // Moon's distance calculation
+    const distance = 385000 - 20905 * Math.cos(this.degToRad(Mp));
 
     // Convert to equatorial coordinates (simplified)
     const epsilon = 23.439281 - 0.0130042 * T; // Obliquity of ecliptic
@@ -233,12 +237,18 @@ export class EphemerisAgent {
     // Calculate moon phase
     const phase = this.calculateMoonPhase(julianDay);
     
+    // Calculate visual mass based on distance (closer = larger)
+    const baseMass = 1.0;
+    const mass = baseMass * (405000 / distance); // Scale based on distance
+    
     return {
       t: timestamp,
       az: (this.radToDeg(azimuth) + 180) % 360,
       el: this.radToDeg(elevation),
       phase: phase.phase,
-      illumination: phase.illumination
+      illumination: phase.illumination,
+      mass: mass,
+      distance: distance
     };
   }
 
@@ -271,7 +281,8 @@ export class EphemerisAgent {
       sun: {
         t: timestamp,
         az: sunPosition.azimuth,
-        el: sunPosition.elevation
+        el: sunPosition.elevation,
+        mass: this.calculateSunMass(timestamp)
       },
       moon: moonPosition
     };
@@ -303,5 +314,81 @@ export class EphemerisAgent {
 
   private radToDeg(radians: number): number {
     return radians * 180 / Math.PI;
+  }
+
+  /**
+   * Calculate sun mass based on Earth's distance (closer = larger)
+   */
+  private calculateSunMass(timestamp: number): number {
+    const date = new Date(timestamp);
+    const julianDay = this.getJulianDay(date);
+    const T = (julianDay - 2451545.0) / 36525.0;
+    
+    // Earth's distance from sun varies throughout year
+    const M = 357.52911 + T * (35999.05029 - 0.0001537 * T);
+    
+    // Approximate distance (AU)
+    const distance = 1.00014 - 0.01671 * Math.cos(this.degToRad(M)) - 0.00014 * Math.cos(this.degToRad(2 * M));
+    
+    // Base mass scaled by distance (closer = larger appearance)
+    return 1.0 / distance; // Inverse relationship
+  }
+
+  /**
+   * Find next sunrise from given timestamp
+   */
+  findNextSunrise(lat: number, lon: number, fromTime: number): { time: number; azimuth: number } {
+    const startTime = fromTime;
+    const endTime = fromTime + (48 * 60 * 60 * 1000); // Search 48 hours ahead
+    
+    for (let t = startTime; t < endTime; t += 60000) { // Check every minute
+      const pos = this.computeSunPosition(lat, lon, 0, t);
+      const prevPos = this.computeSunPosition(lat, lon, 0, t - 60000);
+      
+      // Sun rises when elevation crosses from negative to positive
+      if (prevPos.elevation < -0.833 && pos.elevation >= -0.833) {
+        return { time: t, azimuth: pos.azimuth };
+      }
+    }
+    
+    return { time: 0, azimuth: 0 }; // Not found
+  }
+
+  /**
+   * Find next sunset from given timestamp
+   */
+  findNextSunset(lat: number, lon: number, fromTime: number): { time: number; azimuth: number } {
+    const startTime = fromTime;
+    const endTime = fromTime + (48 * 60 * 60 * 1000); // Search 48 hours ahead
+    
+    for (let t = startTime; t < endTime; t += 60000) { // Check every minute
+      const pos = this.computeSunPosition(lat, lon, 0, t);
+      const prevPos = this.computeSunPosition(lat, lon, 0, t - 60000);
+      
+      // Sun sets when elevation crosses from positive to negative
+      if (prevPos.elevation >= -0.833 && pos.elevation < -0.833) {
+        return { time: t, azimuth: pos.azimuth };
+      }
+    }
+    
+    return { time: 0, azimuth: 0 }; // Not found
+  }
+
+  /**
+   * Get celestial data for any timestamp (past or future)
+   */
+  getCelestialDataForTime(lat: number, lon: number, timestamp: number): CelestialData {
+    const sunPosition = this.computeSunPosition(lat, lon, 0, timestamp);
+    const moonPosition = this.computeMoonPosition(lat, lon, timestamp);
+    
+    return {
+      sun: {
+        t: timestamp,
+        az: sunPosition.azimuth,
+        el: sunPosition.elevation,
+        mass: this.calculateSunMass(timestamp)
+      },
+      moon: moonPosition
+    };
   }
 }

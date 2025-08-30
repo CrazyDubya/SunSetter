@@ -481,6 +481,9 @@ export class RenderingAgent {
     // Add prime meridian and other major lines
     this.addMajorLines();
 
+    // Add basic landmasses
+    this.addBasicLandmasses();
+
     // Create moon
     const moonGeometry = new THREE.SphereGeometry(0.5, 16, 16);
     const moonMaterial = new THREE.MeshBasicMaterial({ 
@@ -553,43 +556,150 @@ export class RenderingAgent {
     }
   }
 
+  private addBasicLandmasses(): void {
+    if (!this.globeGroup) return;
+
+    // Basic landmass outlines using simplified continental shapes
+    const landmassData = [
+      // North America (simplified)
+      { name: 'North America', points: [
+        { lat: 70, lon: -100 }, { lat: 60, lon: -140 }, { lat: 35, lon: -120 }, 
+        { lat: 25, lon: -100 }, { lat: 30, lon: -85 }, { lat: 45, lon: -75 }, 
+        { lat: 60, lon: -65 }, { lat: 70, lon: -100 }
+      ]},
+      
+      // South America (simplified)
+      { name: 'South America', points: [
+        { lat: 10, lon: -70 }, { lat: -20, lon: -70 }, { lat: -35, lon: -60 }, 
+        { lat: -55, lon: -70 }, { lat: -30, lon: -40 }, { lat: 5, lon: -50 }, 
+        { lat: 10, lon: -70 }
+      ]},
+      
+      // Europe (simplified)
+      { name: 'Europe', points: [
+        { lat: 70, lon: 20 }, { lat: 60, lon: -10 }, { lat: 35, lon: 0 }, 
+        { lat: 35, lon: 40 }, { lat: 60, lon: 60 }, { lat: 70, lon: 20 }
+      ]},
+      
+      // Africa (simplified)
+      { name: 'Africa', points: [
+        { lat: 35, lon: 0 }, { lat: 35, lon: 50 }, { lat: -35, lon: 40 }, 
+        { lat: -35, lon: 15 }, { lat: 35, lon: 0 }
+      ]},
+      
+      // Asia (simplified)
+      { name: 'Asia', points: [
+        { lat: 70, lon: 60 }, { lat: 70, lon: 140 }, { lat: 20, lon: 140 }, 
+        { lat: 20, lon: 60 }, { lat: 70, lon: 60 }
+      ]},
+      
+      // Australia (simplified)
+      { name: 'Australia', points: [
+        { lat: -10, lon: 115 }, { lat: -35, lon: 115 }, { lat: -35, lon: 150 }, 
+        { lat: -10, lon: 150 }, { lat: -10, lon: 115 }
+      ]},
+    ];
+
+    landmassData.forEach(landmass => {
+      const points = [];
+      
+      for (const coord of landmass.points) {
+        const pos = this.latLonToGlobePosition(coord.lat, coord.lon, 10.1); // Slightly above surface
+        points.push(pos);
+      }
+      
+      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+      const material = new THREE.LineBasicMaterial({ 
+        color: 0x66ff66, 
+        transparent: true, 
+        opacity: 0.6,
+        linewidth: 2 
+      });
+      const landmassLine = new THREE.Line(geometry, material);
+      this.globeGroup!.add(landmassLine);
+    });
+  }
+
+  /**
+   * Convert latitude/longitude to 3D globe position
+   */
+  private latLonToGlobePosition(lat: number, lon: number, radius: number = 10): THREE.Vector3 {
+    const latRad = (lat * Math.PI) / 180;
+    const lonRad = (lon * Math.PI) / 180;
+    
+    const x = radius * Math.cos(latRad) * Math.cos(lonRad);
+    const y = radius * Math.sin(latRad);
+    const z = -radius * Math.cos(latRad) * Math.sin(lonRad);
+    
+    return new THREE.Vector3(x, y, z);
+  }
+
   /**
    * Update celestial positions on the globe
    */
   updateCelestialPositions(celestialData: CelestialData, userLat: number, userLon: number): void {
     if (!this.globeGroup || !this.moonMesh || !this.userLocationMesh) return;
 
-    // Update sun position (existing sun mesh)
-    if (this.sunMesh && celestialData.sun.el > -20) {
+    // Update sun position - always visible, even below horizon
+    if (this.sunMesh) {
       const sunDistance = 25; // Further from globe
+      // Show below horizon by projecting to minimum elevation
+      const displayElevation = Math.max(celestialData.sun.el, -30);
       const sunPos = this.celestialToGlobePosition(
         celestialData.sun.az, 
-        celestialData.sun.el, 
+        displayElevation, 
         sunDistance
       );
       this.sunMesh.position.copy(sunPos);
       this.sunMesh.visible = true;
-    } else if (this.sunMesh) {
-      this.sunMesh.visible = false;
+      
+      // Scale sun based on mass (closer = larger)
+      const sunMass = celestialData.sun.mass || 1.0;
+      this.sunMesh.scale.setScalar(sunMass * 0.8 + 0.2); // Scale between 0.2-1.0
+      
+      // Dim sun when below horizon
+      const sunMaterial = this.sunMesh.material as THREE.MeshBasicMaterial;
+      if (celestialData.sun.el < -0.833) {
+        sunMaterial.opacity = 0.4; // Dimmed when below horizon
+        sunMaterial.transparent = true;
+      } else {
+        sunMaterial.opacity = 1.0;
+        sunMaterial.transparent = false;
+      }
     }
 
-    // Update moon position
-    if (celestialData.moon.el > -20) {
+    // Update moon position - always visible, even below horizon
+    if (this.moonMesh) {
       const moonDistance = 20;
+      // Show below horizon by projecting to minimum elevation
+      const displayElevation = Math.max(celestialData.moon.el, -25);
       const moonPos = this.celestialToGlobePosition(
         celestialData.moon.az,
-        celestialData.moon.el,
+        displayElevation,
         moonDistance
       );
       this.moonMesh.position.copy(moonPos);
       this.moonMesh.visible = true;
       
-      // Update moon appearance based on phase
+      // Scale moon based on mass/distance (closer = larger)
+      const moonMass = celestialData.moon.mass || 1.0;
+      this.moonMesh.scale.setScalar(moonMass * 0.6 + 0.3); // Scale between 0.3-0.9
+      
+      // Update moon appearance based on phase and visibility
       const moonMaterial = this.moonMesh.material as THREE.MeshBasicMaterial;
-      const brightness = Math.max(0.3, celestialData.moon.illumination);
+      let brightness = Math.max(0.3, celestialData.moon.illumination);
+      
+      // Dim moon when below horizon
+      if (celestialData.moon.el < -0.833) {
+        brightness *= 0.5; // Dimmed when below horizon
+        moonMaterial.transparent = true;
+        moonMaterial.opacity = 0.6;
+      } else {
+        moonMaterial.transparent = celestialData.moon.illumination < 0.1;
+        moonMaterial.opacity = 1.0;
+      }
+      
       moonMaterial.color.setRGB(brightness, brightness, brightness);
-    } else {
-      this.moonMesh.visible = false;
     }
 
     // Update user location on globe
@@ -615,17 +725,6 @@ export class RenderingAgent {
     
     // Add globe position offset
     return new THREE.Vector3(x, y - 5, z - 20);
-  }
-
-  private latLonToGlobePosition(lat: number, lon: number, radius: number): THREE.Vector3 {
-    const latRad = (lat * Math.PI) / 180;
-    const lonRad = (lon * Math.PI) / 180;
-    
-    const x = radius * Math.cos(latRad) * Math.cos(lonRad);
-    const y = radius * Math.sin(latRad);
-    const z = -radius * Math.cos(latRad) * Math.sin(lonRad);
-    
-    return new THREE.Vector3(x, y, z);
   }
 
   dispose() {
