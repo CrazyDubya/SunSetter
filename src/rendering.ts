@@ -231,6 +231,9 @@ export class RenderingAgent {
 
       if (this.mode === 'AR') {
         this.renderAR(this.latestSamples, this.latestHeading);
+        
+        // Update pulsing animations for current time markers
+        this.updatePulsingAnimations();
       }
       // No need to call render2D continuously as it's not animated in the same way.
       // The orchestrator can call it when data changes.
@@ -246,6 +249,21 @@ export class RenderingAgent {
   public updateData(samples: SunSample[], heading: number) {
       this.latestSamples = samples;
       this.latestHeading = heading;
+  }
+
+  /**
+   * Update pulsing animations for markers
+   */
+  private updatePulsingAnimations() {
+    const time = Date.now() * 0.002; // Slow pulsing
+    
+    this.scene.traverse((child) => {
+      if (child.userData.isPulsing) {
+        const baseScale = child.userData.baseScale || 1.0;
+        const pulseAmount = Math.sin(time) * 0.3 + 1.0; // Pulse between 0.7 and 1.3
+        child.scale.setScalar(baseScale * pulseAmount);
+      }
+    });
   }
 
   /**
@@ -274,30 +292,8 @@ export class RenderingAgent {
     const currentSample = this.findClosestSample(samples, now);
 
     if (currentSample) {
-      // Always show current sun position, even below horizon
-      const displayElevation = Math.max(currentSample.el, -5); // Clamp to slightly below horizon for visibility
-      const sunPos = this.azElTo3D(currentSample.az - heading, displayElevation, 5);
-      this.sunMesh.position.copy(sunPos);
-      this.sunMesh.visible = true; // Always visible
-      
-      // Style sun based on visibility
-      const sunMaterial = this.sunMesh.material as THREE.MeshBasicMaterial;
-      if (currentSample.el > -0.833) {
-        // Sun is above horizon - bright yellow
-        sunMaterial.color.setHex(0xffff00);
-        sunMaterial.transparent = false;
-        sunMaterial.opacity = 1.0;
-      } else {
-        // Sun is below horizon - dimmed orange
-        sunMaterial.color.setHex(0xff6600);
-        sunMaterial.transparent = true;
-        sunMaterial.opacity = 0.6;
-      }
-
-      // Add current sun marker with time
-      const currentMarker = this.createARTimeMarker(sunPos, new Date(now), 0xff0000, true);
-      currentMarker.userData.isCurrentSunMarker = true;
-      this.scene.add(currentMarker);
+      // Create enhanced animated current sun marker
+      this.createAnimatedCurrentSun(currentSample, heading, now);
     }
 
     // Create complete sun path (above AND below horizon)
@@ -352,49 +348,77 @@ export class RenderingAgent {
   }
 
   /**
-   * Create complete sun path for AR mode (including below horizon)
+   * Create complete sun path for AR mode with enhanced visuals
    */
   private createCompleteSunPath(samples: SunSample[], heading: number) {
-    // Above horizon path (bright)
-    const aboveHorizonPoints: THREE.Vector3[] = [];
-    const belowHorizonPoints: THREE.Vector3[] = [];
-
+    // Separate points by elevation and create gradient effect
+    const allPoints: Array<{pos: THREE.Vector3, el: number, t: number}> = [];
+    
     samples.forEach(sample => {
       const pos = this.azElTo3D(sample.az - heading, Math.max(sample.el, -15), 4.8);
-      if (sample.el > -0.833) {
-        aboveHorizonPoints.push(pos);
-      } else {
-        belowHorizonPoints.push(pos);
-      }
+      allPoints.push({pos, el: sample.el, t: sample.t});
     });
 
-    // Create above-horizon path (bright yellow/orange)
-    if (aboveHorizonPoints.length > 1) {
-      const aboveGeometry = new THREE.BufferGeometry().setFromPoints(aboveHorizonPoints);
-      const aboveMaterial = new THREE.LineBasicMaterial({
-        color: 0xffaa00,
-        opacity: 0.9,
+    // Create gradient sun path using multiple segments
+    for (let i = 0; i < allPoints.length - 1; i++) {
+      const current = allPoints[i];
+      const next = allPoints[i + 1];
+      
+      // Create individual line segment with color based on elevation and time
+      const segmentGeometry = new THREE.BufferGeometry().setFromPoints([current.pos, next.pos]);
+      
+      // Calculate color based on sun elevation and time of day
+      let color, opacity, linewidth;
+      
+      if (current.el > 30) {
+        // High sun - bright white/yellow
+        color = 0xffffff;
+        opacity = 1.0;
+        linewidth = 6;
+      } else if (current.el > 10) {
+        // Medium sun - yellow/orange
+        color = 0xffd700;
+        opacity = 0.95;
+        linewidth = 5;
+      } else if (current.el > -0.833) {
+        // Low sun - orange/red (golden hour)
+        color = 0xff6600;
+        opacity = 0.9;
+        linewidth = 4;
+      } else if (current.el > -6) {
+        // Civil twilight - red/purple
+        color = 0xff3366;
+        opacity = 0.6;
+        linewidth = 3;
+      } else if (current.el > -12) {
+        // Nautical twilight - purple/blue
+        color = 0x6633ff;
+        opacity = 0.4;
+        linewidth = 2;
+      } else {
+        // Night - dark blue
+        color = 0x0033ff;
+        opacity = 0.25;
+        linewidth = 1;
+      }
+      
+      const segmentMaterial = new THREE.LineBasicMaterial({
+        color: color,
+        opacity: opacity,
         transparent: true,
-        linewidth: 4
+        linewidth: linewidth
       });
-      const abovePath = new THREE.Line(aboveGeometry, aboveMaterial);
-      abovePath.userData.isSunPath = true;
-      this.scene.add(abovePath);
+      
+      const segment = new THREE.Line(segmentGeometry, segmentMaterial);
+      segment.userData.isSunPath = true;
+      this.scene.add(segment);
     }
 
-    // Create below-horizon path (dimmed red/orange)
-    if (belowHorizonPoints.length > 1) {
-      const belowGeometry = new THREE.BufferGeometry().setFromPoints(belowHorizonPoints);
-      const belowMaterial = new THREE.LineBasicMaterial({
-        color: 0xff3300,
-        opacity: 0.4,
-        transparent: true,
-        linewidth: 2
-      });
-      const belowPath = new THREE.Line(belowGeometry, belowMaterial);
-      belowPath.userData.isSunPath = true;
-      this.scene.add(belowPath);
-    }
+    // Add horizon line for reference
+    this.createHorizonLine(heading);
+    
+    // Add cardinal direction markers
+    this.createCardinalDirections(heading);
   }
 
   /**
@@ -438,57 +462,215 @@ export class RenderingAgent {
   }
 
   /**
-   * Create AR time marker with optional emoji
+   * Create animated current sun marker with glow effects
    */
-  private createARTimeMarker(position: THREE.Vector3, time: Date, color: number, isCurrentTime: boolean = false, emoji?: string): THREE.Group {
+  private createAnimatedCurrentSun(currentSample: SunSample, heading: number, now: number) {
+    if (!this.sunMesh) return;
+    
+    const displayElevation = Math.max(currentSample.el, -5);
+    const sunPos = this.azElTo3D(currentSample.az - heading, displayElevation, 5);
+    
+    // Update main sun mesh position and styling
+    this.sunMesh.position.copy(sunPos);
+    this.sunMesh.visible = true;
+    
+    const sunMaterial = this.sunMesh.material as THREE.MeshBasicMaterial;
+    
+    // Enhanced sun styling based on elevation
+    if (currentSample.el > 30) {
+      // High sun - brilliant white with yellow tint
+      sunMaterial.color.setHex(0xffffcc);
+      sunMaterial.transparent = false;
+      sunMaterial.opacity = 1.0;
+      this.sunMesh.scale.setScalar(1.5); // Larger when high
+    } else if (currentSample.el > 10) {
+      // Medium sun - bright yellow
+      sunMaterial.color.setHex(0xffff00);
+      sunMaterial.transparent = false;
+      sunMaterial.opacity = 1.0;
+      this.sunMesh.scale.setScalar(1.3);
+    } else if (currentSample.el > -0.833) {
+      // Low sun - golden orange
+      sunMaterial.color.setHex(0xff9900);
+      sunMaterial.transparent = false;
+      sunMaterial.opacity = 1.0;
+      this.sunMesh.scale.setScalar(1.4); // Larger at horizon for visual impact
+    } else {
+      // Below horizon - dimmed red
+      sunMaterial.color.setHex(0xff3300);
+      sunMaterial.transparent = true;
+      sunMaterial.opacity = 0.7;
+      this.sunMesh.scale.setScalar(1.0);
+    }
+
+    // Create glow effect around current sun
+    this.createSunGlow(sunPos, currentSample.el);
+    
+    // Add current time marker with enhanced styling
+    const currentMarker = this.createEnhancedARTimeMarker(sunPos, new Date(now), 0xff0000, true, '☀️');
+    currentMarker.userData.isCurrentSunMarker = true;
+    this.scene.add(currentMarker);
+  }
+
+  /**
+   * Create glowing halo effect around the current sun
+   */
+  private createSunGlow(position: THREE.Vector3, elevation: number) {
+    // Create multiple glow rings for better effect
+    const glowIntensity = Math.max(0.3, (elevation + 10) / 50); // Stronger glow when higher
+    
+    for (let i = 0; i < 3; i++) {
+      const size = 0.3 + (i * 0.2);
+      const opacity = (0.4 - i * 0.1) * glowIntensity;
+      
+      const glowGeometry = new THREE.SphereGeometry(size, 16, 16);
+      const glowMaterial = new THREE.MeshBasicMaterial({
+        color: elevation > -0.833 ? 0xffff00 : 0xff6600,
+        transparent: true,
+        opacity: opacity,
+        side: THREE.BackSide // Only render backface for glow effect
+      });
+      
+      const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+      glow.position.copy(position);
+      glow.userData.isCurrentSunMarker = true;
+      this.scene.add(glow);
+    }
+  }
+
+  /**
+   * Create horizon line for AR reference
+   */
+  private createHorizonLine(heading: number) {
+    const horizonPoints: THREE.Vector3[] = [];
+    
+    // Create horizon line spanning 360 degrees
+    for (let az = 0; az < 360; az += 5) {
+      const pos = this.azElTo3D(az - heading, 0, 6); // At horizon (0 elevation)
+      horizonPoints.push(pos);
+    }
+    
+    if (horizonPoints.length > 1) {
+      const horizonGeometry = new THREE.BufferGeometry().setFromPoints(horizonPoints);
+      const horizonMaterial = new THREE.LineBasicMaterial({
+        color: 0x66ccff,
+        opacity: 0.5,
+        transparent: true,
+        linewidth: 1
+      });
+      
+      const horizonLine = new THREE.Line(horizonGeometry, horizonMaterial);
+      horizonLine.userData.isSunPath = true; // For cleanup
+      this.scene.add(horizonLine);
+    }
+  }
+
+  /**
+   * Create cardinal direction markers (N, E, S, W)
+   */
+  private createCardinalDirections(heading: number) {
+    const directions = [
+      { name: 'N', azimuth: 0, color: 0x00ff00 },
+      { name: 'E', azimuth: 90, color: 0xffff00 },
+      { name: 'S', azimuth: 180, color: 0xff0000 },
+      { name: 'W', azimuth: 270, color: 0x00ffff }
+    ];
+    
+    directions.forEach(dir => {
+      const pos = this.azElTo3D(dir.azimuth - heading, 10, 7); // Slightly above horizon
+      const marker = this.createEnhancedARTimeMarker(pos, new Date(), dir.color, false, dir.name);
+      marker.userData.isSunPath = true; // For cleanup
+      this.scene.add(marker);
+    });
+  }
+
+  /**
+   * Enhanced AR time marker with better text and effects
+   */
+  private createEnhancedARTimeMarker(position: THREE.Vector3, time: Date, color: number, isCurrentTime: boolean = false, emoji?: string): THREE.Group {
     const markerGroup = new THREE.Group();
     
-    // Create marker sphere
-    const sphereGeometry = new THREE.SphereGeometry(isCurrentTime ? 0.1 : 0.08, 16, 16);
+    // Create marker sphere with enhanced materials
+    const sphereGeometry = new THREE.SphereGeometry(isCurrentTime ? 0.12 : 0.08, 20, 20);
     const sphereMaterial = new THREE.MeshBasicMaterial({
       color: color,
       transparent: true,
-      opacity: isCurrentTime ? 1.0 : 0.8
+      opacity: isCurrentTime ? 1.0 : 0.9
     });
     const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
     markerGroup.add(sphere);
 
-    // Create text label (simplified - using canvas texture)
+    // Add pulsing effect for current time marker
+    if (isCurrentTime) {
+      // Store animation data for pulsing effect
+      sphere.userData.isPulsing = true;
+      sphere.userData.baseScale = 1.0;
+      sphere.userData.pulseSpeed = 0.05;
+    }
+
+    // Create enhanced text label with better rendering
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d')!;
-    canvas.width = 256;
-    canvas.height = 64;
+    canvas.width = 512;
+    canvas.height = 128;
     
-    // Clear canvas
-    context.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    // Clear canvas with rounded background
+    context.fillStyle = 'rgba(0, 0, 0, 0.8)';
     context.fillRect(0, 0, canvas.width, canvas.height);
     
-    // Add text
+    // Add border glow effect
+    context.strokeStyle = `rgb(${(color >> 16) & 255}, ${(color >> 8) & 255}, ${color & 255})`;
+    context.lineWidth = 3;
+    context.strokeRect(3, 3, canvas.width - 6, canvas.height - 6);
+    
+    // Add text with better styling
     context.fillStyle = '#ffffff';
-    context.font = 'bold 20px Arial';
+    context.font = isCurrentTime ? 'bold 32px Arial' : 'bold 24px Arial';
     context.textAlign = 'center';
     context.textBaseline = 'middle';
+    context.shadowColor = 'rgba(0, 0, 0, 0.8)';
+    context.shadowBlur = 4;
+    context.shadowOffsetX = 2;
+    context.shadowOffsetY = 2;
     
-    const timeText = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const displayText = emoji ? `${emoji} ${timeText}` : timeText;
+    let displayText;
+    if (emoji && (emoji === 'N' || emoji === 'E' || emoji === 'S' || emoji === 'W')) {
+      // Cardinal direction
+      displayText = emoji;
+    } else {
+      // Time display
+      const timeText = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      displayText = emoji ? `${emoji} ${timeText}` : timeText;
+    }
+    
     context.fillText(displayText, canvas.width / 2, canvas.height / 2);
     
-    // Create texture and material
+    // Create texture and sprite with better scaling
     const texture = new THREE.CanvasTexture(canvas);
+    texture.generateMipmaps = false;
+    texture.minFilter = THREE.LinearFilter;
+    
     const labelMaterial = new THREE.SpriteMaterial({
       map: texture,
       transparent: true,
-      opacity: 0.9
+      opacity: 0.95,
+      alphaTest: 0.1
     });
     
-    // Create sprite
     const label = new THREE.Sprite(labelMaterial);
-    label.scale.set(1, 0.25, 1);
-    label.position.set(0, 0.2, 0);
+    label.scale.set(isCurrentTime ? 2.0 : 1.5, isCurrentTime ? 0.5 : 0.375, 1);
+    label.position.set(0, isCurrentTime ? 0.3 : 0.25, 0);
     markerGroup.add(label);
     
     markerGroup.position.copy(position);
     return markerGroup;
+  }
+
+  /**
+   * Create AR time marker with optional emoji (legacy method - redirects to enhanced)
+   */
+  private createARTimeMarker(position: THREE.Vector3, time: Date, color: number, isCurrentTime: boolean = false, emoji?: string): THREE.Group {
+    return this.createEnhancedARTimeMarker(position, time, color, isCurrentTime, emoji);
   }
 
   /**
