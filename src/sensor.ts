@@ -219,7 +219,7 @@ export class SensorAgent {
   }
 
   /**
-   * Start video stream for AR with enhanced iOS support
+   * Start video stream for AR with enhanced iOS support and camera switching
    */
   async startVideoStream(constraints: MediaStreamConstraints = { video: { facingMode: 'environment' }, audio: false }): Promise<MediaStream> {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -353,5 +353,61 @@ export class SensorAgent {
    */
   getCachedOrientation(): OrientationData | null {
     return this.orientationCache;
+  }
+
+  /**
+   * Switch camera between front and back
+   */
+  async switchCamera(currentStream: MediaStream): Promise<MediaStream> {
+    // Stop current stream
+    if (currentStream) {
+      currentStream.getTracks().forEach(track => track.stop());
+    }
+
+    // Determine current camera
+    const videoTrack = currentStream.getVideoTracks()[0];
+    const currentFacingMode = videoTrack ? videoTrack.getSettings().facingMode : 'environment';
+    
+    // Switch to opposite camera
+    const newFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+    
+    console.log(`Switching camera from ${currentFacingMode} to ${newFacingMode}`);
+    
+    try {
+      return await this.startVideoStream({
+        video: { facingMode: newFacingMode },
+        audio: false
+      });
+    } catch (error) {
+      console.warn(`Failed to switch to ${newFacingMode} camera, trying exact constraint`);
+      
+      // Try with exact constraint if preferred fails
+      try {
+        return await this.startVideoStream({
+          video: { facingMode: { exact: newFacingMode } },
+          audio: false
+        });
+      } catch (exactError) {
+        console.error('Failed to switch camera with exact constraint', exactError);
+        // Fall back to original camera
+        return await this.startVideoStream({
+          video: { facingMode: currentFacingMode },
+          audio: false
+        });
+      }
+    }
+  }
+
+  /**
+   * Get available camera devices
+   */
+  async getAvailableCameras(): Promise<MediaDeviceInfo[]> {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      return devices.filter(device => device.kind === 'videoinput');
+    } catch (error) {
+      console.error('Failed to enumerate camera devices:', error);
+      return [];
+    }
   }
 }

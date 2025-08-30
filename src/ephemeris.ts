@@ -10,6 +10,19 @@ export interface SunSample {
   error?: string; // optional error message
 }
 
+export interface MoonSample {
+  t: number;      // timestamp
+  az: number;     // azimuth in degrees
+  el: number;     // elevation in degrees
+  phase: number;  // moon phase (0=new, 0.5=full, 1=new)
+  illumination: number; // fraction illuminated (0-1)
+}
+
+export interface CelestialData {
+  sun: SunSample;
+  moon: MoonSample;
+}
+
 export interface LocationParams {
   lat: number;    // latitude in degrees
   lon: number;    // longitude in degrees
@@ -144,6 +157,124 @@ export class EphemerisAgent {
     }
     
     return { sunrise, sunset };
+  }
+
+  /**
+   * Compute moon position for a specific time and location
+   */
+  computeMoonPosition(lat: number, lon: number, timestamp: number): MoonSample {
+    const date = new Date(timestamp);
+    const julianDay = this.getJulianDay(date);
+    const T = (julianDay - 2451545.0) / 36525.0;
+
+    // Moon's mean longitude
+    const L = (218.3164591 + 481267.88134236 * T - 0.0013268 * T * T) % 360;
+    
+    // Moon's mean elongation
+    const D = (297.8502042 + 445267.1115168 * T - 0.0016300 * T * T) % 360;
+    
+    // Sun's mean anomaly
+    const M = (357.5291092 + 35999.0502909 * T - 0.0001536 * T * T) % 360;
+    
+    // Moon's mean anomaly  
+    const Mp = (134.9634114 + 477198.8676313 * T + 0.0089970 * T * T) % 360;
+    
+    // Moon's argument of latitude
+    const F = (93.2720993 + 483202.0175273 * T - 0.0034029 * T * T) % 360;
+    
+    // Simplified lunar longitude calculation
+    const longitude = L + 
+      6.289 * Math.sin(this.degToRad(Mp)) +
+      1.274 * Math.sin(this.degToRad(2 * D - Mp)) +
+      0.658 * Math.sin(this.degToRad(2 * D)) -
+      0.186 * Math.sin(this.degToRad(M)) -
+      0.059 * Math.sin(this.degToRad(2 * Mp - 2 * D)) -
+      0.057 * Math.sin(this.degToRad(Mp - 2 * D + M));
+    
+    // Simplified lunar latitude calculation
+    const latitude = 
+      5.128 * Math.sin(this.degToRad(F)) +
+      0.281 * Math.sin(this.degToRad(Mp + F)) +
+      0.278 * Math.sin(this.degToRad(Mp - F)) +
+      0.173 * Math.sin(this.degToRad(2 * D - F));
+
+    // Moon's distance calculation (unused but part of algorithm)
+    // const distance = 385000 - 20905 * Math.cos(this.degToRad(Mp));
+
+    // Convert to equatorial coordinates (simplified)
+    const epsilon = 23.439281 - 0.0130042 * T; // Obliquity of ecliptic
+    
+    const alpha = Math.atan2(
+      Math.sin(this.degToRad(longitude)) * Math.cos(this.degToRad(epsilon)) - 
+      Math.tan(this.degToRad(latitude)) * Math.sin(this.degToRad(epsilon)),
+      Math.cos(this.degToRad(longitude))
+    );
+    
+    const delta = Math.asin(
+      Math.sin(this.degToRad(latitude)) * Math.cos(this.degToRad(epsilon)) +
+      Math.cos(this.degToRad(latitude)) * Math.sin(this.degToRad(epsilon)) * Math.sin(this.degToRad(longitude))
+    );
+
+    // Convert to horizontal coordinates
+    const gmst = this.getGMST(date);
+    const H = this.degToRad((gmst + lon) - this.radToDeg(alpha));
+    const latRad = this.degToRad(lat);
+    
+    const elevation = Math.asin(
+      Math.sin(latRad) * Math.sin(delta) +
+      Math.cos(latRad) * Math.cos(delta) * Math.cos(H)
+    );
+    
+    const azimuth = Math.atan2(
+      Math.sin(H),
+      Math.cos(H) * Math.sin(latRad) - Math.tan(delta) * Math.cos(latRad)
+    );
+
+    // Calculate moon phase
+    const phase = this.calculateMoonPhase(julianDay);
+    
+    return {
+      t: timestamp,
+      az: (this.radToDeg(azimuth) + 180) % 360,
+      el: this.radToDeg(elevation),
+      phase: phase.phase,
+      illumination: phase.illumination
+    };
+  }
+
+  /**
+   * Calculate moon phase and illumination
+   */
+  private calculateMoonPhase(julianDay: number): { phase: number; illumination: number } {
+    const T = (julianDay - 2451545.0) / 36525.0;
+    
+    // Mean phase angle
+    const D = (297.8502042 + 445267.1115168 * T) % 360;
+    
+    // Phase calculation (0 = new moon, 0.5 = full moon, 1 = new moon)
+    const phase = (D / 360) % 1;
+    
+    // Illumination fraction (0 = new, 1 = full)
+    const illumination = (1 + Math.cos(this.degToRad(D))) / 2;
+    
+    return { phase, illumination };
+  }
+
+  /**
+   * Get celestial data (sun and moon) for a specific time
+   */
+  getCelestialData(lat: number, lon: number, timestamp: number): CelestialData {
+    const sunPosition = this.computeSunPosition(lat, lon, 0, timestamp);
+    const moonPosition = this.computeMoonPosition(lat, lon, timestamp);
+    
+    return {
+      sun: {
+        t: timestamp,
+        az: sunPosition.azimuth,
+        el: sunPosition.elevation
+      },
+      moon: moonPosition
+    };
   }
 
   private getJulianDay(date: Date): number {

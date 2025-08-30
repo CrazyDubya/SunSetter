@@ -14,6 +14,7 @@ class SunSetterApp {
   private locationBtn: HTMLButtonElement;
   private cameraBtn: HTMLButtonElement;
   private toggleBtn: HTMLButtonElement;
+  private switchCameraBtn: HTMLButtonElement;
   private refreshBtn: HTMLButtonElement;
 
   constructor() {
@@ -29,6 +30,7 @@ class SunSetterApp {
     this.locationBtn = document.getElementById('locationBtn') as HTMLButtonElement;
     this.cameraBtn = document.getElementById('cameraBtn') as HTMLButtonElement;
     this.toggleBtn = document.getElementById('toggleView') as HTMLButtonElement;
+    this.switchCameraBtn = document.getElementById('switchCameraBtn') as HTMLButtonElement;
     this.refreshBtn = document.getElementById('refreshBtn') as HTMLButtonElement;
 
     // Initialize orchestrator
@@ -99,6 +101,26 @@ class SunSetterApp {
       const mode = await this.orchestrator.toggleRenderMode();
       this.toggleBtn.textContent = `Switch to ${mode === '2D' ? 'AR' : '2D'}`;
       this.toggleBtn.disabled = false;
+      
+      // Show/hide camera switch button based on mode
+      this.switchCameraBtn.style.display = mode === 'AR' ? 'inline-block' : 'none';
+    });
+
+    // Switch camera button
+    this.switchCameraBtn.addEventListener('click', async () => {
+      this.switchCameraBtn.disabled = true;
+      this.switchCameraBtn.textContent = '📷 Switching...';
+      
+      const success = await this.orchestrator.switchCamera();
+      
+      if (success) {
+        this.showSuccessMessage('Camera switched successfully!');
+      } else {
+        this.showSuccessMessage('Camera switch failed - try again');
+      }
+      
+      this.switchCameraBtn.textContent = '📷 Switch Camera';
+      this.switchCameraBtn.disabled = false;
     });
 
     // Force refresh button

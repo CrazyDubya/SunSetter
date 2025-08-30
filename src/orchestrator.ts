@@ -22,6 +22,7 @@ export class OrchestratorAgent {
   private renderer: RenderingAgent;
   private status: AppStatus = { state: 'init', confidence: 0 };
   private statusCallbacks: ((status: AppStatus) => void)[] = [];
+  private currentStream: MediaStream | null = null;
 
   constructor(container: HTMLElement) {
     this.ephemeris = new EphemerisAgent();
@@ -127,8 +128,8 @@ export class OrchestratorAgent {
         samples 
       });
 
-      // Start rendering
-      this.startRendering(samples);
+      // Start rendering with celestial data
+      this.startRendering(samples, location);
       
       this.updateStatus({ 
         state: 'rendering', 
@@ -144,15 +145,29 @@ export class OrchestratorAgent {
   }
 
   /**
-   * Start the rendering loop
+   * Start the rendering loop with celestial data
    */
-  private startRendering(samples: SunSample[]): void {
+  private startRendering(samples: SunSample[], location: LocationData): void {
     this.sensor.getHeading().then(heading => {
       this.renderer.updateData(samples, heading);
+      
+      // Get current celestial data for moon and sun
+      const now = Date.now();
+      const celestialData = this.ephemeris.getCelestialData(location.lat, location.lon, now);
+      
+      // Update globe with celestial positions
+      this.renderer.updateCelestialPositions(celestialData, location.lat, location.lon);
+      
       this.renderer.render2D(samples, heading);
     }).catch(() => {
       console.warn('Could not get device heading, using default (North)');
       this.renderer.updateData(samples, 0);
+      
+      // Still update celestial data without heading
+      const now = Date.now();
+      const celestialData = this.ephemeris.getCelestialData(location.lat, location.lon, now);
+      this.renderer.updateCelestialPositions(celestialData, location.lat, location.lon);
+      
       this.renderer.render2D(samples, 0);
     });
   }
@@ -166,6 +181,7 @@ export class OrchestratorAgent {
     if (targetMode === 'AR') {
       try {
         const stream = await this.sensor.startVideoStream();
+        this.currentStream = stream;
         this.renderer.toggleMode(stream);
         this.renderer.startAnimationLoop();
         this.startOrientationUpdates();
@@ -178,8 +194,35 @@ export class OrchestratorAgent {
         return '2D';
       }
     } else { // Switching back to 2D
+      if (this.currentStream) {
+        this.currentStream.getTracks().forEach(track => track.stop());
+        this.currentStream = null;
+      }
       this.renderer.toggleMode();
       return '2D';
+    }
+  }
+
+  /**
+   * Switch camera between front and back
+   */
+  async switchCamera(): Promise<boolean> {
+    if (!this.currentStream || this.renderer.currentMode !== 'AR') {
+      return false;
+    }
+
+    try {
+      const newStream = await this.sensor.switchCamera(this.currentStream);
+      this.currentStream = newStream;
+      
+      // Update renderer with new stream
+      this.renderer.toggleMode(); // Turn off current
+      this.renderer.toggleMode(newStream); // Turn on with new stream
+      
+      return true;
+    } catch (error) {
+      console.error('Failed to switch camera:', error);
+      return false;
     }
   }
 

@@ -3,7 +3,7 @@
  */
 
 import * as THREE from 'three';
-import { SunSample } from './ephemeris.js';
+import { SunSample, CelestialData } from './ephemeris.js';
 
 export interface RenderOptions {
   fpsLimit?: number;
@@ -23,6 +23,9 @@ export class RenderingAgent {
   private videoTexture: THREE.VideoTexture | null = null;
   private latestSamples: SunSample[] = [];
   private latestHeading: number = 0;
+  private globeGroup: THREE.Group | null = null;
+  private moonMesh: THREE.Mesh | null = null;
+  private userLocationMesh: THREE.Mesh | null = null;
 
   constructor(container: HTMLElement) {
     // Create canvas
@@ -78,6 +81,9 @@ export class RenderingAgent {
     this.sunMesh.add(sunLight);
 
     this.scene.add(this.sunMesh);
+
+    // Create wireframe globe for 2D mode
+    this.createWireframeGlobe();
 
     // Position camera
     this.camera.position.set(0, 0, 0);
@@ -345,8 +351,13 @@ export class RenderingAgent {
     this.mode = this.mode === '2D' ? 'AR' : '2D';
 
     if (this.mode === 'AR' && stream && this.videoElement) {
+      // AR mode - hide globe, show camera
       this.videoElement.srcObject = stream;
       this.videoElement.style.display = 'block';
+      
+      if (this.globeGroup) {
+        this.globeGroup.visible = false;
+      }
 
       if (this.renderer) {
         this.videoTexture = new THREE.VideoTexture(this.videoElement);
@@ -354,6 +365,7 @@ export class RenderingAgent {
         this.renderer.setClearColor(0x000000, 0);
       }
     } else {
+      // 2D mode - show globe, hide camera
       if (this.videoElement) {
         this.videoElement.style.display = 'none';
         if (this.videoElement.srcObject) {
@@ -361,9 +373,14 @@ export class RenderingAgent {
             this.videoElement.srcObject = null;
         }
       }
+      
+      if (this.globeGroup) {
+        this.globeGroup.visible = true;
+      }
+      
       if (this.renderer) {
-        this.scene.background = new THREE.Color(0x87CEEB);
-        this.renderer.setClearColor(0x87CEEB, 1);
+        this.scene.background = new THREE.Color(0x000033); // Dark space background for globe view
+        this.renderer.setClearColor(0x000033, 1);
       }
       if (this.videoTexture) {
           this.videoTexture.dispose();
@@ -428,6 +445,187 @@ export class RenderingAgent {
         this.canvas.height = height;
       }
     });
+  }
+
+  /**
+   * Create wireframe globe with continents and celestial bodies
+   */
+  private createWireframeGlobe(): void {
+    if (!this.renderer) return;
+
+    this.globeGroup = new THREE.Group();
+    
+    // Create Earth wireframe sphere
+    const earthGeometry = new THREE.SphereGeometry(10, 32, 16);
+    const earthWireframe = new THREE.WireframeGeometry(earthGeometry);
+    const earthMaterial = new THREE.LineBasicMaterial({ 
+      color: 0x00aaff, 
+      transparent: true, 
+      opacity: 0.6 
+    });
+    const earthMesh = new THREE.LineSegments(earthWireframe, earthMaterial);
+    this.globeGroup.add(earthMesh);
+
+    // Add equator line
+    const equatorGeometry = new THREE.RingGeometry(10, 10.1, 64);
+    const equatorMaterial = new THREE.MeshBasicMaterial({ 
+      color: 0x00ff00, 
+      transparent: true, 
+      opacity: 0.8,
+      side: THREE.DoubleSide
+    });
+    const equatorRing = new THREE.Mesh(equatorGeometry, equatorMaterial);
+    equatorRing.rotation.x = Math.PI / 2;
+    this.globeGroup.add(equatorRing);
+
+    // Add prime meridian and other major lines
+    this.addMajorLines();
+
+    // Create moon
+    const moonGeometry = new THREE.SphereGeometry(0.5, 16, 16);
+    const moonMaterial = new THREE.MeshBasicMaterial({ 
+      color: 0xcccccc,
+      transparent: true,
+      opacity: 0.8
+    });
+    this.moonMesh = new THREE.Mesh(moonGeometry, moonMaterial);
+    this.globeGroup.add(this.moonMesh);
+
+    // Create user location marker
+    const locationGeometry = new THREE.ConeGeometry(0.3, 1, 8);
+    const locationMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    this.userLocationMesh = new THREE.Mesh(locationGeometry, locationMaterial);
+    this.globeGroup.add(this.userLocationMesh);
+
+    // Position globe in scene
+    this.globeGroup.position.set(0, -5, -20);
+    this.scene.add(this.globeGroup);
+  }
+
+  private addMajorLines(): void {
+    if (!this.globeGroup) return;
+
+    // Add meridian lines (longitude)
+    for (let lon = 0; lon < 360; lon += 30) {
+      const points = [];
+      for (let lat = -90; lat <= 90; lat += 10) {
+        const latRad = (lat * Math.PI) / 180;
+        const lonRad = (lon * Math.PI) / 180;
+        
+        const x = 10 * Math.cos(latRad) * Math.cos(lonRad);
+        const y = 10 * Math.sin(latRad);
+        const z = -10 * Math.cos(latRad) * Math.sin(lonRad);
+        
+        points.push(new THREE.Vector3(x, y, z));
+      }
+      
+      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+      const material = new THREE.LineBasicMaterial({ 
+        color: 0x444444, 
+        transparent: true, 
+        opacity: 0.4 
+      });
+      const line = new THREE.Line(geometry, material);
+      this.globeGroup.add(line);
+    }
+
+    // Add parallel lines (latitude)
+    for (let lat = -60; lat <= 60; lat += 30) {
+      const points = [];
+      const radius = 10 * Math.cos((lat * Math.PI) / 180);
+      const y = 10 * Math.sin((lat * Math.PI) / 180);
+      
+      for (let lon = 0; lon <= 360; lon += 10) {
+        const lonRad = (lon * Math.PI) / 180;
+        const x = radius * Math.cos(lonRad);
+        const z = -radius * Math.sin(lonRad);
+        points.push(new THREE.Vector3(x, y, z));
+      }
+      
+      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+      const material = new THREE.LineBasicMaterial({ 
+        color: 0x444444, 
+        transparent: true, 
+        opacity: 0.4 
+      });
+      const line = new THREE.Line(geometry, material);
+      this.globeGroup.add(line);
+    }
+  }
+
+  /**
+   * Update celestial positions on the globe
+   */
+  updateCelestialPositions(celestialData: CelestialData, userLat: number, userLon: number): void {
+    if (!this.globeGroup || !this.moonMesh || !this.userLocationMesh) return;
+
+    // Update sun position (existing sun mesh)
+    if (this.sunMesh && celestialData.sun.el > -20) {
+      const sunDistance = 25; // Further from globe
+      const sunPos = this.celestialToGlobePosition(
+        celestialData.sun.az, 
+        celestialData.sun.el, 
+        sunDistance
+      );
+      this.sunMesh.position.copy(sunPos);
+      this.sunMesh.visible = true;
+    } else if (this.sunMesh) {
+      this.sunMesh.visible = false;
+    }
+
+    // Update moon position
+    if (celestialData.moon.el > -20) {
+      const moonDistance = 20;
+      const moonPos = this.celestialToGlobePosition(
+        celestialData.moon.az,
+        celestialData.moon.el,
+        moonDistance
+      );
+      this.moonMesh.position.copy(moonPos);
+      this.moonMesh.visible = true;
+      
+      // Update moon appearance based on phase
+      const moonMaterial = this.moonMesh.material as THREE.MeshBasicMaterial;
+      const brightness = Math.max(0.3, celestialData.moon.illumination);
+      moonMaterial.color.setRGB(brightness, brightness, brightness);
+    } else {
+      this.moonMesh.visible = false;
+    }
+
+    // Update user location on globe
+    const userPos = this.latLonToGlobePosition(userLat, userLon, 10.5);
+    this.userLocationMesh.position.copy(userPos);
+    
+    // Point location marker outward from globe center
+    this.userLocationMesh.lookAt(
+      userPos.x * 2,
+      userPos.y * 2, 
+      userPos.z * 2
+    );
+  }
+
+  private celestialToGlobePosition(azimuth: number, elevation: number, distance: number): THREE.Vector3 {
+    // Convert celestial coordinates to 3D position around globe
+    const azRad = (azimuth * Math.PI) / 180;
+    const elRad = (elevation * Math.PI) / 180;
+    
+    const x = distance * Math.cos(elRad) * Math.sin(azRad);
+    const y = distance * Math.sin(elRad);
+    const z = -distance * Math.cos(elRad) * Math.cos(azRad);
+    
+    // Add globe position offset
+    return new THREE.Vector3(x, y - 5, z - 20);
+  }
+
+  private latLonToGlobePosition(lat: number, lon: number, radius: number): THREE.Vector3 {
+    const latRad = (lat * Math.PI) / 180;
+    const lonRad = (lon * Math.PI) / 180;
+    
+    const x = radius * Math.cos(latRad) * Math.cos(lonRad);
+    const y = radius * Math.sin(latRad);
+    const z = -radius * Math.cos(latRad) * Math.sin(lonRad);
+    
+    return new THREE.Vector3(x, y, z);
   }
 
   dispose() {
