@@ -272,7 +272,6 @@ export class RenderingAgent {
       // Make sun more prominent in AR mode
       const sunMaterial = this.sunMesh.material as THREE.MeshBasicMaterial;
       sunMaterial.color.setHex(0xffff00);
-      sunMaterial.emissive.setHex(0xff6600);
       sunMaterial.transparent = false;
       sunMaterial.opacity = 1.0;
     }
@@ -312,9 +311,9 @@ export class RenderingAgent {
    */
   private addTimeMarkers(samples: SunSample[], heading: number) {
     // Add markers every 2 hours
-    const markerSamples = samples.filter((sample, index) => index % 24 === 0); // Every 2 hours (assuming 5-minute intervals)
+    const markerSamples = samples.filter((_, index) => index % 24 === 0); // Every 2 hours (assuming 5-minute intervals)
     
-    markerSamples.forEach(sample => {
+    markerSamples.forEach((sample) => {
       const markerPos = this.azElTo3D(sample.az - heading, sample.el, 4.9);
       
       // Create a small sphere marker

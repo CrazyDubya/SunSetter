@@ -22,7 +22,6 @@ export class OrchestratorAgent {
   private renderer: RenderingAgent;
   private status: AppStatus = { state: 'init', confidence: 0 };
   private statusCallbacks: ((status: AppStatus) => void)[] = [];
-  private stream: MediaStream | null = null;
 
   constructor(container: HTMLElement) {
     this.ephemeris = new EphemerisAgent();

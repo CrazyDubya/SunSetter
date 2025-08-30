@@ -29,23 +29,34 @@ export class SensorAgent {
   private orientationCache: OrientationData | null = null;
 
   /**
-   * Get current location with timeout
+   * Get current location with enhanced mobile support
    */
-  async getLocation(timeoutMs: number = 5000): Promise<LocationData> {
+  async getLocation(timeoutMs: number = 15000): Promise<LocationData> {
     return new Promise((resolve, reject) => {
       // Check if geolocation is supported
       if (!navigator.geolocation) {
-        reject(new SensorError('Geolocation not supported', 'unavailable'));
+        reject(new SensorError('Geolocation not supported on this device', 'unavailable'));
         return;
       }
 
+      console.log('Requesting location with timeout:', timeoutMs);
+      
       const timeoutId = setTimeout(() => {
-        reject(new SensorError('Location request timed out', 'timeout'));
+        reject(new SensorError('Location request timed out - please try again or check location settings', 'timeout'));
       }, timeoutMs);
+
+      // First try with high accuracy for mobile
+      const highAccuracyOptions = {
+        enableHighAccuracy: true,
+        timeout: Math.min(timeoutMs - 1000, 10000), // Leave 1s buffer, max 10s
+        maximumAge: 30000 // 30 seconds cache for mobile
+      };
 
       navigator.geolocation.getCurrentPosition(
         (position) => {
           clearTimeout(timeoutId);
+          console.log('Location obtained:', position.coords);
+          
           const locationData: LocationData = {
             lat: position.coords.latitude,
             lon: position.coords.longitude,
@@ -57,27 +68,60 @@ export class SensorAgent {
           resolve(locationData);
         },
         (error) => {
-          clearTimeout(timeoutId);
-          let errorType: 'permission' | 'timeout' | 'unavailable' = 'unavailable';
+          console.warn('High accuracy location failed, trying low accuracy:', error);
           
-          switch (error.code) {
-            case error.PERMISSION_DENIED:
-              errorType = 'permission';
-              break;
-            case error.TIMEOUT:
-              errorType = 'timeout';
-              break;
-            default:
-              errorType = 'unavailable';
-          }
+          // Fallback to low accuracy for mobile Safari/Chrome issues
+          const lowAccuracyOptions = {
+            enableHighAccuracy: false,
+            timeout: Math.max(timeoutMs - 5000, 5000),
+            maximumAge: 60000 // 1 minute cache
+          };
           
-          reject(new SensorError(error.message, errorType));
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              clearTimeout(timeoutId);
+              console.log('Location obtained (low accuracy):', position.coords);
+              
+              const locationData: LocationData = {
+                lat: position.coords.latitude,
+                lon: position.coords.longitude,
+                alt: position.coords.altitude ?? undefined,
+                accuracy: position.coords.accuracy,
+                timestamp: position.timestamp
+              };
+              this.locationCache = locationData;
+              resolve(locationData);
+            },
+            (fallbackError) => {
+              clearTimeout(timeoutId);
+              console.error('All location attempts failed:', fallbackError);
+              
+              let errorType: 'permission' | 'timeout' | 'unavailable' = 'unavailable';
+              let errorMessage = 'Location access failed';
+              
+              switch (fallbackError.code) {
+                case fallbackError.PERMISSION_DENIED:
+                  errorType = 'permission';
+                  errorMessage = 'Location permission denied. Please enable location access in your browser settings and try again.';
+                  break;
+                case fallbackError.TIMEOUT:
+                  errorType = 'timeout';
+                  errorMessage = 'Location request timed out. Please try again with a stable connection.';
+                  break;
+                case fallbackError.POSITION_UNAVAILABLE:
+                  errorType = 'unavailable';
+                  errorMessage = 'Location unavailable. Please check your device location settings.';
+                  break;
+                default:
+                  errorMessage = `Location error: ${fallbackError.message}`;
+              }
+              
+              reject(new SensorError(errorMessage, errorType));
+            },
+            lowAccuracyOptions
+          );
         },
-        {
-          enableHighAccuracy: true,
-          timeout: timeoutMs,
-          maximumAge: 60000 // 1 minute cache
-        }
+        highAccuracyOptions
       );
     });
   }

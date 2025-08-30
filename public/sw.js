@@ -1,6 +1,6 @@
 // Service Worker for SunSetter PWA
 
-const CACHE_NAME = 'sunsetter-pwa-v1';
+const CACHE_NAME = 'sunsetter-pwa-v' + Date.now(); // Force cache invalidation
 const URLS_TO_CACHE = [
   '/SunSetter/',
   '/SunSetter/index.html',
@@ -34,7 +34,8 @@ self.addEventListener('activate', (event) => {
       .then((keyList) => {
         return Promise.all(
           keyList.map((key) => {
-            if (key !== CACHE_NAME) {
+            // Delete ALL old caches to force refresh
+            if (key.startsWith('sunsetter-pwa-v') && key !== CACHE_NAME) {
               console.log('Service Worker: Removing old cache ', key);
               return caches.delete(key);
             }
@@ -43,7 +44,7 @@ self.addEventListener('activate', (event) => {
       })
   );
   
-  // Take control of all pages
+  // Take control of all pages immediately
   self.clients.claim();
 });
 
