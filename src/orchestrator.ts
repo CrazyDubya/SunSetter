@@ -134,6 +134,9 @@ export class OrchestratorAgent {
       // Start rendering with celestial data
       this.startRendering(samples, location);
       
+      // Ensure animation loop is running for 2D globe
+      this.renderer.startAnimationLoop();
+      
       this.updateStatus({ 
         state: 'rendering', 
         confidence: 100,

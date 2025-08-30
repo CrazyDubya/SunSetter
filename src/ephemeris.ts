@@ -64,73 +64,51 @@ export class EphemerisAgent {
 
   /**
    * Compute sun position for a specific time and location
-   * Simplified algorithm based on NOAA SPA
+   * Simple but accurate solar position algorithm
    */
   computeSunPosition(lat: number, lon: number, _alt: number, timestamp: number) {
     const date = new Date(timestamp);
     
-    // Julian day calculation
-    const julianDay = this.getJulianDay(date);
+    // Calculate day of year
+    const startOfYear = new Date(date.getFullYear(), 0, 1);
+    const dayOfYear = Math.floor((date.getTime() - startOfYear.getTime()) / (1000 * 60 * 60 * 24)) + 1;
     
-    // Julian century from J2000.0
-    const T = (julianDay - 2451545.0) / 36525.0;
+    // Solar declination angle
+    const declination = 23.45 * Math.sin((360 * (284 + dayOfYear) / 365) * Math.PI / 180);
     
-    // Geometric mean longitude of sun (degrees)
-    const L0 = (280.46646 + T * (36000.76983 + T * 0.0003032)) % 360;
+    // Equation of time (minutes)
+    const B = (360 / 365) * (dayOfYear - 81) * Math.PI / 180;
+    const equationOfTime = 9.87 * Math.sin(2 * B) - 7.53 * Math.cos(B) - 1.5 * Math.sin(B);
     
-    // Geometric mean anomaly of sun (degrees)
-    const M = 357.52911 + T * (35999.05029 - 0.0001537 * T);
+    // Local solar time
+    const timeCorrection = equationOfTime + (4 * lon); // Longitude-based time correction
+    const solarTime = date.getUTCHours() + date.getUTCMinutes() / 60 + timeCorrection / 60;
     
-    // Eccentricity of earth's orbit (not currently used in simplified calculation)
-    // const _e = 0.016708634 - T * (0.000042037 + 0.0000001267 * T);
+    // Hour angle
+    const hourAngle = 15 * (solarTime - 12);
     
-    // Sun's equation of center
-    const C = Math.sin(this.degToRad(M)) * (1.914602 - T * (0.004817 + 0.000014 * T)) +
-              Math.sin(this.degToRad(2 * M)) * (0.019993 - 0.000101 * T) +
-              Math.sin(this.degToRad(3 * M)) * 0.000289;
+    // Convert to radians
+    const latRad = lat * Math.PI / 180;
+    const decRad = declination * Math.PI / 180;
+    const hourRad = hourAngle * Math.PI / 180;
     
-    // True longitude of sun
-    const trueLon = L0 + C;
-    
-    // Apparent longitude of sun
-    const omega = 125.04 - 1934.136 * T;
-    const lambda = trueLon - 0.00569 - 0.00478 * Math.sin(this.degToRad(omega));
-    
-    // Obliquity of ecliptic
-    const epsilon0 = 23 + (26 + ((21.448 - T * (46.815 + T * (0.00059 - T * 0.001813)))) / 60) / 60;
-    const epsilon = epsilon0 + 0.00256 * Math.cos(this.degToRad(omega));
-    
-    // Right ascension and declination
-    const alpha = Math.atan2(
-      Math.cos(this.degToRad(epsilon)) * Math.sin(this.degToRad(lambda)),
-      Math.cos(this.degToRad(lambda))
-    );
-    const delta = Math.asin(Math.sin(this.degToRad(epsilon)) * Math.sin(this.degToRad(lambda)));
-    
-    // Greenwich mean sidereal time
-    const gmst = this.getGMST(date);
-    
-    // Local hour angle
-    const H = this.degToRad((gmst + lon) - this.radToDeg(alpha));
-    
-    // Convert to horizontal coordinates
-    const latRad = this.degToRad(lat);
-    
-    // Elevation (altitude)
+    // Solar elevation
     const elevation = Math.asin(
-      Math.sin(latRad) * Math.sin(delta) +
-      Math.cos(latRad) * Math.cos(delta) * Math.cos(H)
+      Math.sin(decRad) * Math.sin(latRad) + 
+      Math.cos(decRad) * Math.cos(latRad) * Math.cos(hourRad)
     );
     
-    // Azimuth
-    const azimuth = Math.atan2(
-      Math.sin(H),
-      Math.cos(H) * Math.sin(latRad) - Math.tan(delta) * Math.cos(latRad)
+    // Solar azimuth
+    const azimuthRad = Math.atan2(
+      Math.sin(hourRad),
+      Math.cos(hourRad) * Math.sin(latRad) - Math.tan(decRad) * Math.cos(latRad)
     );
+    
+    let azimuth = (azimuthRad * 180 / Math.PI + 180) % 360;
     
     return {
-      elevation: this.radToDeg(elevation),
-      azimuth: (this.radToDeg(azimuth) + 180) % 360 // Convert to 0-360 range
+      elevation: elevation * 180 / Math.PI,
+      azimuth: azimuth
     };
   }
 
