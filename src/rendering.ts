@@ -259,8 +259,14 @@ export class RenderingAgent {
       this.scene.remove(this.pathLine);
     }
     
-    // Clean up old time markers
-    const markersToRemove = this.scene.children.filter(child => child.userData.isTimeMarker);
+    // Clean up old time markers and sun path objects
+    const markersToRemove = this.scene.children.filter(child => 
+      child.userData.isTimeMarker || 
+      child.userData.isSunPath || 
+      child.userData.isSunriseMarker || 
+      child.userData.isSunsetMarker ||
+      child.userData.isCurrentSunMarker
+    );
     markersToRemove.forEach(marker => this.scene.remove(marker));
 
     // Find current sun position
@@ -268,43 +274,40 @@ export class RenderingAgent {
     const currentSample = this.findClosestSample(samples, now);
 
     if (currentSample) {
-      // Convert azimuth/elevation to 3D position for AR overlay
-      const sunPos = this.azElTo3D(currentSample.az - heading, currentSample.el, 5);
+      // Always show current sun position, even below horizon
+      const displayElevation = Math.max(currentSample.el, -5); // Clamp to slightly below horizon for visibility
+      const sunPos = this.azElTo3D(currentSample.az - heading, displayElevation, 5);
       this.sunMesh.position.copy(sunPos);
+      this.sunMesh.visible = true; // Always visible
       
-      // Ensure sun is visible in AR mode
-      this.sunMesh.visible = currentSample.el > -10; // Only show when sun is above horizon
-      
-      // Make sun more prominent in AR mode
+      // Style sun based on visibility
       const sunMaterial = this.sunMesh.material as THREE.MeshBasicMaterial;
-      sunMaterial.color.setHex(0xffff00);
-      sunMaterial.transparent = false;
-      sunMaterial.opacity = 1.0;
+      if (currentSample.el > -0.833) {
+        // Sun is above horizon - bright yellow
+        sunMaterial.color.setHex(0xffff00);
+        sunMaterial.transparent = false;
+        sunMaterial.opacity = 1.0;
+      } else {
+        // Sun is below horizon - dimmed orange
+        sunMaterial.color.setHex(0xff6600);
+        sunMaterial.transparent = true;
+        sunMaterial.opacity = 0.6;
+      }
+
+      // Add current sun marker with time
+      const currentMarker = this.createARTimeMarker(sunPos, new Date(now), 0xff0000, true);
+      currentMarker.userData.isCurrentSunMarker = true;
+      this.scene.add(currentMarker);
     }
 
-    // Create enhanced sun path line for AR
-    const pathPoints: THREE.Vector3[] = [];
-    const visibleSamples = samples.filter(sample => sample.el > -10);
+    // Create complete sun path (above AND below horizon)
+    this.createCompleteSunPath(samples, heading);
     
-    visibleSamples.forEach(sample => {
-      const pos = this.azElTo3D(sample.az - heading, sample.el, 4.8);
-      pathPoints.push(pos);
-    });
-
-    if (pathPoints.length > 1) {
-      const pathGeometry = new THREE.BufferGeometry().setFromPoints(pathPoints);
-      const pathMaterial = new THREE.LineBasicMaterial({
-        color: 0xffaa00,
-        opacity: 0.8,
-        transparent: true,
-        linewidth: 3
-      });
-      this.pathLine = new THREE.Line(pathGeometry, pathMaterial);
-      this.scene.add(this.pathLine);
-    }
-
-    // Add time markers and labels for better AR experience
-    this.addTimeMarkers(visibleSamples, heading);
+    // Add sunrise/sunset markers
+    this.addSunriseSunsetMarkers(samples, heading);
+    
+    // Add time markers every 2 hours
+    this.addTimeMarkers(samples, heading);
 
     // Ensure proper rendering with camera background
     if (this.videoTexture && this.videoElement) {
@@ -316,28 +319,176 @@ export class RenderingAgent {
    * Add time markers along the sun path for AR mode
    */
   private addTimeMarkers(samples: SunSample[], heading: number) {
-    // Add markers every 2 hours
-    const markerSamples = samples.filter((_, index) => index % 24 === 0); // Every 2 hours (assuming 5-minute intervals)
+    // Add markers every hour for major times only (to avoid clutter)
+    const hourlyMarkers = [8, 10, 12, 14, 16, 18]; // Key times for photography
     
-    markerSamples.forEach((sample) => {
-      const markerPos = this.azElTo3D(sample.az - heading, sample.el, 4.9);
+    hourlyMarkers.forEach(hour => {
+      // Find sample closest to this hour
+      const targetTime = new Date();
+      targetTime.setHours(hour, 0, 0, 0);
+      const targetTimestamp = targetTime.getTime();
       
-      // Create a small sphere marker
-      const markerGeometry = new THREE.SphereGeometry(0.05, 8, 8);
-      const markerMaterial = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.8
+      let closestSample = samples[0];
+      let minDiff = Math.abs(samples[0].t - targetTimestamp);
+      
+      samples.forEach(sample => {
+        const diff = Math.abs(sample.t - targetTimestamp);
+        if (diff < minDiff) {
+          minDiff = diff;
+          closestSample = sample;
+        }
       });
-      const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-      marker.position.copy(markerPos);
       
-      // Add marker to scene
-      this.scene.add(marker);
-      
-      // Store marker for cleanup (simplified approach)
-      marker.userData.isTimeMarker = true;
+      // Only show marker if sun is above horizon or close to it
+      if (closestSample.el > -5) {
+        const markerPos = this.azElTo3D(closestSample.az - heading, Math.max(closestSample.el, -2), 4.9);
+        
+        // Create time marker with hour label
+        const marker = this.createARTimeMarker(markerPos, new Date(closestSample.t), 0xffffff, false);
+        marker.userData.isTimeMarker = true;
+        this.scene.add(marker);
+      }
     });
+  }
+
+  /**
+   * Create complete sun path for AR mode (including below horizon)
+   */
+  private createCompleteSunPath(samples: SunSample[], heading: number) {
+    // Above horizon path (bright)
+    const aboveHorizonPoints: THREE.Vector3[] = [];
+    const belowHorizonPoints: THREE.Vector3[] = [];
+
+    samples.forEach(sample => {
+      const pos = this.azElTo3D(sample.az - heading, Math.max(sample.el, -15), 4.8);
+      if (sample.el > -0.833) {
+        aboveHorizonPoints.push(pos);
+      } else {
+        belowHorizonPoints.push(pos);
+      }
+    });
+
+    // Create above-horizon path (bright yellow/orange)
+    if (aboveHorizonPoints.length > 1) {
+      const aboveGeometry = new THREE.BufferGeometry().setFromPoints(aboveHorizonPoints);
+      const aboveMaterial = new THREE.LineBasicMaterial({
+        color: 0xffaa00,
+        opacity: 0.9,
+        transparent: true,
+        linewidth: 4
+      });
+      const abovePath = new THREE.Line(aboveGeometry, aboveMaterial);
+      abovePath.userData.isSunPath = true;
+      this.scene.add(abovePath);
+    }
+
+    // Create below-horizon path (dimmed red/orange)
+    if (belowHorizonPoints.length > 1) {
+      const belowGeometry = new THREE.BufferGeometry().setFromPoints(belowHorizonPoints);
+      const belowMaterial = new THREE.LineBasicMaterial({
+        color: 0xff3300,
+        opacity: 0.4,
+        transparent: true,
+        linewidth: 2
+      });
+      const belowPath = new THREE.Line(belowGeometry, belowMaterial);
+      belowPath.userData.isSunPath = true;
+      this.scene.add(belowPath);
+    }
+  }
+
+  /**
+   * Add sunrise and sunset markers on AR path
+   */
+  private addSunriseSunsetMarkers(samples: SunSample[], heading: number) {
+    // Find sunrise and sunset samples (elevation crosses horizon)
+    let sunriseIndex = -1;
+    let sunsetIndex = -1;
+
+    for (let i = 1; i < samples.length; i++) {
+      const prev = samples[i - 1];
+      const curr = samples[i];
+      
+      // Sunrise: elevation goes from below to above -0.833 degrees
+      if (prev.el < -0.833 && curr.el >= -0.833 && sunriseIndex === -1) {
+        sunriseIndex = i;
+      }
+      
+      // Sunset: elevation goes from above to below -0.833 degrees
+      if (prev.el >= -0.833 && curr.el < -0.833 && sunriseIndex !== -1 && sunsetIndex === -1) {
+        sunsetIndex = i;
+      }
+    }
+
+    // Add sunrise marker
+    if (sunriseIndex !== -1) {
+      const sunrisePos = this.azElTo3D(samples[sunriseIndex].az - heading, samples[sunriseIndex].el, 4.9);
+      const sunriseMarker = this.createARTimeMarker(sunrisePos, new Date(samples[sunriseIndex].t), 0xff6600, false, '🌅');
+      sunriseMarker.userData.isSunriseMarker = true;
+      this.scene.add(sunriseMarker);
+    }
+
+    // Add sunset marker
+    if (sunsetIndex !== -1) {
+      const sunsetPos = this.azElTo3D(samples[sunsetIndex].az - heading, samples[sunsetIndex].el, 4.9);
+      const sunsetMarker = this.createARTimeMarker(sunsetPos, new Date(samples[sunsetIndex].t), 0xff3300, false, '🌇');
+      sunsetMarker.userData.isSunsetMarker = true;
+      this.scene.add(sunsetMarker);
+    }
+  }
+
+  /**
+   * Create AR time marker with optional emoji
+   */
+  private createARTimeMarker(position: THREE.Vector3, time: Date, color: number, isCurrentTime: boolean = false, emoji?: string): THREE.Group {
+    const markerGroup = new THREE.Group();
+    
+    // Create marker sphere
+    const sphereGeometry = new THREE.SphereGeometry(isCurrentTime ? 0.1 : 0.08, 16, 16);
+    const sphereMaterial = new THREE.MeshBasicMaterial({
+      color: color,
+      transparent: true,
+      opacity: isCurrentTime ? 1.0 : 0.8
+    });
+    const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+    markerGroup.add(sphere);
+
+    // Create text label (simplified - using canvas texture)
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d')!;
+    canvas.width = 256;
+    canvas.height = 64;
+    
+    // Clear canvas
+    context.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Add text
+    context.fillStyle = '#ffffff';
+    context.font = 'bold 20px Arial';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    
+    const timeText = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const displayText = emoji ? `${emoji} ${timeText}` : timeText;
+    context.fillText(displayText, canvas.width / 2, canvas.height / 2);
+    
+    // Create texture and material
+    const texture = new THREE.CanvasTexture(canvas);
+    const labelMaterial = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 0.9
+    });
+    
+    // Create sprite
+    const label = new THREE.Sprite(labelMaterial);
+    label.scale.set(1, 0.25, 1);
+    label.position.set(0, 0.2, 0);
+    markerGroup.add(label);
+    
+    markerGroup.position.copy(position);
+    return markerGroup;
   }
 
   /**
