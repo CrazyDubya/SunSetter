@@ -73,8 +73,8 @@ export class RenderingAgent {
     directionalLight.position.set(0, 10, 5);
     this.scene.add(directionalLight);
 
-    // Create sun mesh
-    const sunGeometry = new THREE.SphereGeometry(0.1, 16, 16);
+    // Create sun mesh with bright glow
+    const sunGeometry = new THREE.SphereGeometry(0.1, 32, 32);
     const sunMaterial = new THREE.MeshBasicMaterial({
       color: 0xffff00,
       fog: false
@@ -231,29 +231,81 @@ export class RenderingAgent {
       return;
     }
 
-    const animate = () => {
+    // Set up high-DPI display support
+    if (this.renderer) {
+      const pixelRatio = Math.min(window.devicePixelRatio, 2);
+      this.renderer.setPixelRatio(pixelRatio);
+    }
+
+    let lastTime = 0;
+    const targetFPS = 60;
+    const frameInterval = 1000 / targetFPS;
+
+    const animate = (currentTime: number) => {
       this.animationId = requestAnimationFrame(animate);
 
+      // Frame limiting for consistent performance
+      const deltaTime = currentTime - lastTime;
+      if (deltaTime < frameInterval) {
+        return;
+      }
+      lastTime = currentTime - (deltaTime % frameInterval);
+
+      // Update both modes with smooth animations
       if (this.mode === 'AR') {
         this.renderAR(this.latestSamples, this.latestHeading);
-        
-        // Update pulsing animations for current time markers
         this.updatePulsingAnimations();
+      } else {
+        // Continuously animate 2D globe
+        this.updateGlobeAnimation(currentTime);
+        this.updateCelestialAnimations(currentTime);
       }
-      // No need to call render2D continuously as it's not animated in the same way.
-      // The orchestrator can call it when data changes.
 
       if (this.renderer) {
         this.renderer.render(this.scene, this.camera);
       }
     };
 
-    animate();
+    animate(0);
   }
 
   public updateData(samples: SunSample[], heading: number) {
       this.latestSamples = samples;
       this.latestHeading = heading;
+  }
+
+  /**
+   * Update globe rotation and animations for 2D mode
+   */
+  private updateGlobeAnimation(time: number) {
+    if (!this.globeGroup) return;
+    
+    // Gentle continuous rotation to show it's live
+    const rotationSpeed = 0.0002;
+    this.globeGroup.rotation.y += rotationSpeed;
+    
+    // Slight bob animation for visual interest
+    const bobAmount = 0.1;
+    const bobSpeed = 0.001;
+    this.globeGroup.position.y = -5 + Math.sin(time * bobSpeed) * bobAmount;
+  }
+
+  /**
+   * Update celestial body animations for 2D mode
+   */
+  private updateCelestialAnimations(time: number) {
+    if (!this.sunMesh || !this.moonMesh) return;
+    
+    // Add subtle color pulsing to sun
+    const sunMaterial = this.sunMesh.material as THREE.MeshBasicMaterial;
+    const glowIntensity = 0.8 + Math.sin(time * 0.003) * 0.2;
+    const brightness = Math.floor(255 * glowIntensity);
+    sunMaterial.color.setHex((brightness << 16) | (brightness << 8) | 0x00);
+    
+    // Add phase-based brightness variation to moon
+    const moonMaterial = this.moonMesh.material as THREE.MeshBasicMaterial;
+    const moonPhase = Math.sin(time * 0.001) * 0.5 + 0.5; // Simulate moon phase
+    moonMaterial.opacity = 0.5 + moonPhase * 0.4;
   }
 
   /**
@@ -297,14 +349,11 @@ export class RenderingAgent {
       );
       markersToRemove.forEach(marker => this.scene.remove(marker));
 
-      // Create complete sun path (above AND below horizon)
-      this.createCompleteSunPath(samples, heading);
+      // Create clean, optimized sun path
+      this.createOptimizedSunPath(samples, heading);
       
-      // Add sunrise/sunset markers
-      this.addSunriseSunsetMarkers(samples, heading);
-      
-      // Add time markers every 2 hours
-      this.addTimeMarkers(samples, heading);
+      // Add only essential markers (sunrise/sunset)
+      this.addEssentialMarkers(samples, heading);
 
       // Update tracking variables
       this.lastARHeading = heading;
@@ -335,15 +384,167 @@ export class RenderingAgent {
       );
       oldMarkers.forEach(marker => this.scene.remove(marker));
 
-      // Create new current sun marker
-      this.createAnimatedCurrentSun(currentSample, heading, now);
+      // Create clean current sun marker
+      const distance = this.getARDistance(Math.max(currentSample.el, -5));
+      const pos = this.azElTo3D(currentSample.az - heading, Math.max(currentSample.el, -5), distance);
+      
+      // Create bright, pulsing current sun marker
+      const sunMarker = new THREE.Group();
+      
+      // Main sun sphere
+      const sunGeometry = new THREE.SphereGeometry(0.8, 32, 32);
+      const sunMaterial = new THREE.MeshBasicMaterial({
+        color: currentSample.el > 0 ? 0xffff00 : 0xff6600,
+        transparent: true,
+        opacity: 0.9
+      });
+      
+      const sun = new THREE.Mesh(sunGeometry, sunMaterial);
+      sunMarker.add(sun);
+      
+      // Add corona glow
+      const coronaGeometry = new THREE.SphereGeometry(1.2, 16, 16);
+      const coronaMaterial = new THREE.MeshBasicMaterial({
+        color: currentSample.el > 0 ? 0xffff00 : 0xff6600,
+        transparent: true,
+        opacity: 0.2
+      });
+      const corona = new THREE.Mesh(coronaGeometry, coronaMaterial);
+      sunMarker.add(corona);
+      
+      sunMarker.position.copy(pos);
+      sunMarker.userData.isCurrentSunMarker = true;
+      sunMarker.userData.isPulsing = true;
+      sunMarker.userData.baseScale = 1.0;
+      
+      this.scene.add(sunMarker);
     }
   }
 
   /**
-   * Add time markers along the sun path for AR mode
+   * Create optimized sun path with single line and gradient colors
    */
-  private addTimeMarkers(samples: SunSample[], heading: number) {
+  private createOptimizedSunPath(samples: SunSample[], heading: number) {
+    const pathPoints: THREE.Vector3[] = [];
+    const colors: number[] = [];
+    
+    samples.forEach(sample => {
+      if (sample.el > -15) { // Show path from well below horizon to above
+        const distance = this.getARDistance(sample.el);
+        const pos = this.azElTo3D(sample.az - heading, sample.el, distance);
+        pathPoints.push(pos);
+        
+        // Color based on elevation
+        let r, g, b;
+        if (sample.el > 0) {
+          // Above horizon - yellow to white gradient
+          const factor = Math.min(sample.el / 30, 1);
+          r = 1; g = 1; b = 0.3 + 0.7 * factor;
+        } else {
+          // Below horizon - orange to red gradient
+          const factor = Math.max((sample.el + 15) / 15, 0);
+          r = 1; g = 0.3 + 0.4 * factor; b = 0.1;
+        }
+        colors.push(r, g, b);
+      }
+    });
+
+    if (pathPoints.length > 1) {
+      const pathGeometry = new THREE.BufferGeometry().setFromPoints(pathPoints);
+      pathGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      
+      const pathMaterial = new THREE.LineBasicMaterial({
+        vertexColors: true,
+        opacity: 0.8,
+        transparent: true,
+        linewidth: 3
+      });
+      
+      this.pathLine = new THREE.Line(pathGeometry, pathMaterial);
+      this.pathLine.userData.isSunPath = true;
+      this.scene.add(this.pathLine);
+    }
+  }
+
+  /**
+   * Add only essential markers (sunrise/sunset) for clean AR view
+   */
+  private addEssentialMarkers(samples: SunSample[], heading: number) {
+    let sunriseIndex = -1;
+    let sunsetIndex = -1;
+
+    // Find sunrise and sunset
+    for (let i = 1; i < samples.length; i++) {
+      const prev = samples[i - 1];
+      const curr = samples[i];
+      
+      if (prev.el < -0.833 && curr.el >= -0.833 && sunriseIndex === -1) {
+        sunriseIndex = i;
+      }
+      if (prev.el >= -0.833 && curr.el < -0.833 && sunriseIndex !== -1 && sunsetIndex === -1) {
+        sunsetIndex = i;
+      }
+    }
+
+    // Add clean sunrise marker
+    if (sunriseIndex !== -1) {
+      const sample = samples[sunriseIndex];
+      const distance = this.getARDistance(sample.el);
+      const pos = this.azElTo3D(sample.az - heading, sample.el, distance);
+      const marker = this.createCleanARMarker(pos, '🌅', 0xff6600, 1.2);
+      marker.userData.isSunriseMarker = true;
+      this.scene.add(marker);
+    }
+
+    // Add clean sunset marker
+    if (sunsetIndex !== -1) {
+      const sample = samples[sunsetIndex];
+      const distance = this.getARDistance(sample.el);
+      const pos = this.azElTo3D(sample.az - heading, sample.el, distance);
+      const marker = this.createCleanARMarker(pos, '🌇', 0xff3300, 1.2);
+      marker.userData.isSunsetMarker = true;
+      this.scene.add(marker);
+    }
+  }
+
+  /**
+   * Create clean, minimal AR marker
+   */
+  private createCleanARMarker(position: THREE.Vector3, _emoji: string, color: number, size: number): THREE.Group {
+    const group = new THREE.Group();
+    
+    // Simple bright sphere for the marker
+    const geometry = new THREE.SphereGeometry(size * 0.3, 16, 16);
+    const material = new THREE.MeshBasicMaterial({
+      color: color,
+      transparent: true,
+      opacity: 0.8
+    });
+    
+    const sphere = new THREE.Mesh(geometry, material);
+    group.add(sphere);
+    
+    // Add subtle glow ring
+    const ringGeometry = new THREE.RingGeometry(size * 0.4, size * 0.6, 16);
+    const ringMaterial = new THREE.MeshBasicMaterial({
+      color: color,
+      transparent: true,
+      opacity: 0.3,
+      side: THREE.DoubleSide
+    });
+    const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+    ring.lookAt(new THREE.Vector3(0, 0, 0)); // Face camera
+    group.add(ring);
+    
+    group.position.copy(position);
+    return group;
+  }
+
+  /**
+   * Add time markers along the sun path for AR mode (deprecated - using simplified markers)
+   */
+  // @ts-ignore
+  private _addTimeMarkers(samples: SunSample[], heading: number) {
     // Add markers every hour for major times only (to avoid clutter)
     const hourlyMarkers = [8, 10, 12, 14, 16, 18]; // Key times for photography
     
@@ -377,9 +578,10 @@ export class RenderingAgent {
   }
 
   /**
-   * Create complete sun path for AR mode with enhanced visuals
+   * Create complete sun path for AR mode (deprecated - using optimized version)
    */
-  private createCompleteSunPath(samples: SunSample[], heading: number) {
+  // @ts-ignore
+  private _createCompleteSunPath(samples: SunSample[], heading: number) {
     // Separate points by elevation and create gradient effect
     const allPoints: Array<{pos: THREE.Vector3, el: number, t: number}> = [];
     
@@ -451,9 +653,10 @@ export class RenderingAgent {
   }
 
   /**
-   * Add sunrise and sunset markers on AR path
+   * Add sunrise and sunset markers (deprecated - using essential markers)
    */
-  private addSunriseSunsetMarkers(samples: SunSample[], heading: number) {
+  // @ts-ignore
+  private _addSunriseSunsetMarkers(samples: SunSample[], heading: number) {
     // Find sunrise and sunset samples (elevation crosses horizon)
     let sunriseIndex = -1;
     let sunsetIndex = -1;
@@ -491,9 +694,10 @@ export class RenderingAgent {
   }
 
   /**
-   * Create animated current sun marker with glow effects
+   * Create animated current sun marker (deprecated - using simplified version)
    */
-  private createAnimatedCurrentSun(currentSample: SunSample, heading: number, now: number) {
+  // @ts-ignore
+  private _createAnimatedCurrentSun(currentSample: SunSample, heading: number, now: number) {
     if (!this.sunMesh) return;
     
     const displayElevation = Math.max(currentSample.el, -5);
@@ -775,15 +979,37 @@ export class RenderingAgent {
     });
   }
 
+  /**
+   * Convert azimuth/elevation to 3D coordinates for AR mode
+   * Uses proper spherical to cartesian conversion with AR-appropriate scaling
+   */
   private azElTo3D(azimuth: number, elevation: number, distance: number): THREE.Vector3 {
+    // Convert to radians
     const azRad = (azimuth * Math.PI) / 180;
     const elRad = (elevation * Math.PI) / 180;
     
-    const x = distance * Math.cos(elRad) * Math.sin(azRad);
-    const y = distance * Math.sin(elRad);
-    const z = -distance * Math.cos(elRad) * Math.cos(azRad);
+    // Use standard spherical coordinate system
+    // In AR, we want objects at the horizon to appear at screen edges
+    const r = distance;
+    const x = r * Math.cos(elRad) * Math.sin(azRad);
+    const y = r * Math.sin(elRad);
+    const z = -r * Math.cos(elRad) * Math.cos(azRad);
     
     return new THREE.Vector3(x, y, z);
+  }
+
+  /**
+   * Calculate appropriate distance for AR overlay based on elevation
+   * Objects near horizon should appear further to maintain proper perspective
+   */
+  private getARDistance(elevation: number): number {
+    // Scale distance based on elevation for better AR perspective
+    const minDistance = 8;   // Close objects for high elevations
+    const maxDistance = 20;  // Far objects for horizon
+    
+    // Objects at horizon appear further away
+    const normalizedElevation = Math.max(0, (elevation + 10) / 90); // -10° to 80° range
+    return minDistance + (maxDistance - minDistance) * (1 - normalizedElevation);
   }
 
   private azElToCanvas(azimuth: number, elevation: number, centerX: number, centerY: number, radius: number): { x: number; y: number } {
@@ -822,16 +1048,26 @@ export class RenderingAgent {
 
     this.globeGroup = new THREE.Group();
     
-    // Create Earth wireframe sphere
-    const earthGeometry = new THREE.SphereGeometry(10, 32, 16);
-    const earthWireframe = new THREE.WireframeGeometry(earthGeometry);
-    const earthMaterial = new THREE.LineBasicMaterial({ 
-      color: 0x00aaff, 
+    // Create beautiful solid Earth sphere
+    const earthGeometry = new THREE.SphereGeometry(10, 128, 64);
+    const earthMaterial = new THREE.MeshBasicMaterial({ 
+      color: 0x1e3a5f, // Deep ocean blue
       transparent: true, 
-      opacity: 0.6 
+      opacity: 0.9 
     });
-    const earthMesh = new THREE.LineSegments(earthWireframe, earthMaterial);
+    const earthMesh = new THREE.Mesh(earthGeometry, earthMaterial);
     this.globeGroup.add(earthMesh);
+    
+    // Add atmosphere glow
+    const atmosphereGeometry = new THREE.SphereGeometry(10.8, 32, 16);
+    const atmosphereMaterial = new THREE.MeshBasicMaterial({
+      color: 0x87ceeb,
+      transparent: true,
+      opacity: 0.15,
+      side: THREE.BackSide
+    });
+    const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
+    this.globeGroup.add(atmosphere);
 
     // Add equator line
     const equatorGeometry = new THREE.RingGeometry(10, 10.1, 64);
@@ -845,11 +1081,11 @@ export class RenderingAgent {
     equatorRing.rotation.x = Math.PI / 2;
     this.globeGroup.add(equatorRing);
 
-    // Add prime meridian and other major lines
-    this.addMajorLines();
+    // Add enhanced landmasses with better visibility
+    this.addEnhancedLandmasses();
 
-    // Add basic landmasses
-    this.addBasicLandmasses();
+    // Add subtle grid lines
+    this.addGridLines();
 
     // Create moon
     const moonGeometry = new THREE.SphereGeometry(0.5, 16, 16);
@@ -872,7 +1108,7 @@ export class RenderingAgent {
     this.scene.add(this.globeGroup);
   }
 
-  private addMajorLines(): void {
+  private addGridLines(): void {
     if (!this.globeGroup) return;
 
     // Add meridian lines (longitude)
@@ -923,10 +1159,10 @@ export class RenderingAgent {
     }
   }
 
-  private addBasicLandmasses(): void {
+  private addEnhancedLandmasses(): void {
     if (!this.globeGroup) return;
 
-    // Basic landmass outlines using simplified continental shapes
+    // Enhanced landmass shapes that show up well on solid globe
     const landmassData = [
       // North America (simplified)
       { name: 'North America', points: [
@@ -971,19 +1207,37 @@ export class RenderingAgent {
       const points = [];
       
       for (const coord of landmass.points) {
-        const pos = this.latLonToGlobePosition(coord.lat, coord.lon, 10.1); // Slightly above surface
+        const pos = this.latLonToGlobePosition(coord.lat, coord.lon, 10.08); // Slightly above surface
         points.push(pos);
       }
       
-      const geometry = new THREE.BufferGeometry().setFromPoints(points);
-      const material = new THREE.LineBasicMaterial({ 
-        color: 0x66ff66, 
-        transparent: true, 
-        opacity: 0.6,
-        linewidth: 2 
-      });
-      const landmassLine = new THREE.Line(geometry, material);
-      this.globeGroup!.add(landmassLine);
+      if (points.length > 2) {
+        // Create bright, visible landmass outlines
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const material = new THREE.LineBasicMaterial({ 
+          color: 0x44ff55, 
+          transparent: true, 
+          opacity: 0.9,
+          linewidth: 4
+        });
+        const landmassLine = new THREE.Line(geometry, material);
+        this.globeGroup!.add(landmassLine);
+        
+        // Add small glowing dots at key points for better visibility
+        points.forEach((point, index) => {
+          if (index % 3 === 0) { // Every third point to avoid clutter
+            const dotGeometry = new THREE.SphereGeometry(0.1, 8, 8);
+            const dotMaterial = new THREE.MeshBasicMaterial({
+              color: 0x66ff77,
+              transparent: true,
+              opacity: 0.8
+            });
+            const dot = new THREE.Mesh(dotGeometry, dotMaterial);
+            dot.position.copy(point);
+            this.globeGroup!.add(dot);
+          }
+        });
+      }
     });
   }
 
