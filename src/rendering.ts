@@ -237,21 +237,8 @@ export class RenderingAgent {
       this.renderer.setPixelRatio(pixelRatio);
     }
 
-    let lastTime = 0;
-    const targetFPS = 60;
-    const frameInterval = 1000 / targetFPS;
-    let forceUpdate = false;
-
-    const animate = (currentTime: number) => {
+    const animate = () => {
       this.animationId = requestAnimationFrame(animate);
-
-      // Frame limiting for consistent performance, but allow forced updates
-      const deltaTime = currentTime - lastTime;
-      if (deltaTime < frameInterval && !forceUpdate) {
-        return;
-      }
-      lastTime = currentTime - (deltaTime % frameInterval);
-      forceUpdate = false;
 
       // Update both modes with smooth animations
       if (this.mode === 'AR') {
@@ -259,8 +246,8 @@ export class RenderingAgent {
         this.updatePulsingAnimations();
       } else {
         // Continuously animate 2D globe
-        this.updateGlobeAnimation(currentTime);
-        this.updateCelestialAnimations(currentTime);
+        this.updateGlobeAnimation(Date.now());
+        this.updateCelestialAnimations(Date.now());
       }
 
       if (this.renderer) {
@@ -268,20 +255,13 @@ export class RenderingAgent {
       }
     };
 
-    animate(0);
+    animate();
   }
 
   public updateData(samples: SunSample[], heading: number) {
       this.latestSamples = samples;
       this.latestHeading = heading;
-      
-      // Force immediate update if in AR mode for responsive tracking
-      if (this.mode === 'AR') {
-        this.renderAR(samples, heading);
-        if (this.renderer) {
-          this.renderer.render(this.scene, this.camera);
-        }
-      }
+      // Let the animation loop handle rendering to avoid conflicts
   }
 
   /**
@@ -339,8 +319,8 @@ export class RenderingAgent {
   renderAR(samples: SunSample[], heading: number) {
     if (!this.renderer || !this.sunMesh) return;
 
-    // More responsive AR updates - lower threshold for heading changes
-    const headingChanged = Math.abs(heading - this.lastARHeading) > 0.5; // 0.5 degree threshold for smoother tracking
+    // Balanced AR updates - not too aggressive
+    const headingChanged = Math.abs(heading - this.lastARHeading) > 1.5; // 1.5 degree threshold
     const samplesChanged = samples.length !== this.lastARSamples.length || 
                           !this.arObjectsCreated;
 

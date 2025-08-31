@@ -186,15 +186,6 @@ export class OrchestratorAgent {
 
     if (targetMode === 'AR') {
       try {
-        // Request device orientation permissions first (iOS 13+)
-        if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
-          const permission = await (DeviceOrientationEvent as any).requestPermission();
-          if (permission !== 'granted') {
-            this.handleError('Device orientation permission denied. Please allow in settings.');
-            return '2D';
-          }
-        }
-        
         const stream = await this.sensor.startVideoStream();
         this.currentStream = stream;
         this.renderer.toggleMode(stream);
@@ -202,7 +193,7 @@ export class OrchestratorAgent {
         this.startOrientationUpdates();
         return 'AR';
       } catch (error) {
-        this.handleError('Failed to start AR mode. Camera or orientation not available.');
+        this.handleError('Failed to start AR mode. Camera not available.');
         if (this.renderer.currentMode === 'AR') {
             this.renderer.toggleMode(); // switch back
         }
@@ -242,69 +233,16 @@ export class OrchestratorAgent {
   }
 
   private startOrientationUpdates(): void {
-    console.log('Starting enhanced orientation updates...');
-    
-    // Enhanced device orientation with multiple fallbacks
+    // Simplified, reliable orientation tracking
     const handleOrientation = (event: DeviceOrientationEvent) => {
-      // Get compass heading (alpha = 0 is North)
-      let heading = event.alpha ?? 0;
-      
-      // Compensate for device orientation (landscape/portrait)
-      if (screen.orientation?.angle) {
-        heading = (heading + screen.orientation.angle) % 360;
-      }
-      
-      // Ensure heading is positive
-      if (heading < 0) heading += 360;
-      
-      console.log(`Device orientation update: ${heading.toFixed(1)}°`);
-      
+      const heading = event.alpha ?? 0;
       if (this.status.samples) {
         this.renderer.updateData(this.status.samples, heading);
       }
     };
-
-    // Multiple event listeners for better compatibility
-    window.addEventListener('deviceorientation', handleOrientation, { passive: true });
-    window.addEventListener('deviceorientationabsolute', handleOrientation, { passive: true });
     
-    // Also listen for device motion for additional updates
-    const handleMotion = (event: DeviceMotionEvent) => {
-      // Trigger a heading recalculation if we have motion
-      if (event.acceleration?.x || event.acceleration?.y) {
-        this.sensor.getHeading().then(heading => {
-          if (this.status.samples) {
-            this.renderer.updateData(this.status.samples, heading);
-          }
-        }).catch(() => {
-          // Ignore heading errors
-        });
-      }
-    };
-    
-    window.addEventListener('devicemotion', handleMotion, { passive: true });
-    
-    // Force initial heading update
-    this.sensor.getHeading().then(heading => {
-      if (this.status.samples) {
-        this.renderer.updateData(this.status.samples, heading);
-      }
-    }).catch(() => {
-      console.warn('Could not get initial heading');
-    });
-    
-    // High-frequency polling as fallback for real-time updates
-    const pollOrientation = setInterval(() => {
-      if (this.renderer.currentMode === 'AR' && this.status.samples) {
-        this.sensor.getHeading().then(heading => {
-          this.renderer.updateData(this.status.samples!, heading);
-        }).catch(() => {
-          // Ignore polling errors
-        });
-      } else if (this.renderer.currentMode === '2D') {
-        clearInterval(pollOrientation);
-      }
-    }, 100); // Poll every 100ms for smooth updates
+    // Single event listener - keep it simple
+    window.addEventListener('deviceorientation', handleOrientation, true);
   }
 
   /**
