@@ -240,16 +240,18 @@ export class RenderingAgent {
     let lastTime = 0;
     const targetFPS = 60;
     const frameInterval = 1000 / targetFPS;
+    let forceUpdate = false;
 
     const animate = (currentTime: number) => {
       this.animationId = requestAnimationFrame(animate);
 
-      // Frame limiting for consistent performance
+      // Frame limiting for consistent performance, but allow forced updates
       const deltaTime = currentTime - lastTime;
-      if (deltaTime < frameInterval) {
+      if (deltaTime < frameInterval && !forceUpdate) {
         return;
       }
       lastTime = currentTime - (deltaTime % frameInterval);
+      forceUpdate = false;
 
       // Update both modes with smooth animations
       if (this.mode === 'AR') {
@@ -272,6 +274,14 @@ export class RenderingAgent {
   public updateData(samples: SunSample[], heading: number) {
       this.latestSamples = samples;
       this.latestHeading = heading;
+      
+      // Force immediate update if in AR mode for responsive tracking
+      if (this.mode === 'AR') {
+        this.renderAR(samples, heading);
+        if (this.renderer) {
+          this.renderer.render(this.scene, this.camera);
+        }
+      }
   }
 
   /**
@@ -329,8 +339,8 @@ export class RenderingAgent {
   renderAR(samples: SunSample[], heading: number) {
     if (!this.renderer || !this.sunMesh) return;
 
-    // Only recreate AR objects if heading changed significantly or samples changed
-    const headingChanged = Math.abs(heading - this.lastARHeading) > 2; // 2 degree threshold
+    // More responsive AR updates - lower threshold for heading changes
+    const headingChanged = Math.abs(heading - this.lastARHeading) > 0.5; // 0.5 degree threshold for smoother tracking
     const samplesChanged = samples.length !== this.lastARSamples.length || 
                           !this.arObjectsCreated;
 
@@ -524,17 +534,7 @@ export class RenderingAgent {
     const sphere = new THREE.Mesh(geometry, material);
     group.add(sphere);
     
-    // Add subtle glow ring
-    const ringGeometry = new THREE.RingGeometry(size * 0.4, size * 0.6, 16);
-    const ringMaterial = new THREE.MeshBasicMaterial({
-      color: color,
-      transparent: true,
-      opacity: 0.3,
-      side: THREE.DoubleSide
-    });
-    const ring = new THREE.Mesh(ringGeometry, ringMaterial);
-    ring.lookAt(new THREE.Vector3(0, 0, 0)); // Face camera
-    group.add(ring);
+    // Remove problematic ring - it appears as weird box in AR
     
     group.position.copy(position);
     return group;
