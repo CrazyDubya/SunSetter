@@ -48,10 +48,16 @@ export class RenderingAgent {
       this.renderer = new THREE.WebGLRenderer({ 
         canvas: this.canvas,
         alpha: true,
-        antialias: true
+        antialias: false, // Disable for performance
+        powerPreference: "low-power" // Optimize for battery life
       });
       this.renderer.setSize(window.innerWidth, window.innerHeight);
       this.renderer.setClearColor(0x87CEEB, 1); // Sky blue background
+      
+      // Set performance-friendly settings
+      const pixelRatio = Math.min(window.devicePixelRatio, 2);
+      this.renderer.setPixelRatio(pixelRatio);
+      
     } catch (error) {
       console.warn('WebGL not available, falling back to 2D canvas');
       this.setupCanvas2D();

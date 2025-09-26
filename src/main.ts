@@ -290,20 +290,75 @@ class SunSetterApp {
   private startDemoMode(): void {
     console.log('Starting demo mode with San Francisco location...');
     
+    // Show visual feedback that demo mode is starting
+    this.updateStatus('Starting demo mode...');
+    
     // Create demo instance
     const app = document.getElementById('app');
     if (!app) return;
     
-    const demo = new DemoMode(app);
-    demo.startDemo();
+    try {
+      const demo = new DemoMode(app);
+      demo.startDemo();
+      
+      // Update UI to show demo mode
+      this.updateStatus('Demo mode active (San Francisco)');
+      this.updateLocation({ lat: 37.7749, lon: -122.4194, accuracy: 10 });
+      
+      // Enable toggle button in demo mode
+      this.toggleBtn.disabled = false;
+      this.locationBtn.textContent = 'Get Real Location';
+      
+      // Show demo notification
+      this.showDemoNotification();
+      
+    } catch (error) {
+      console.error('Failed to start demo mode:', error);
+      this.updateStatus('Demo mode failed to start');
+    }
+  }
+
+  private showDemoNotification(): void {
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0, 0, 0, 0.9);
+      color: white;
+      padding: 20px;
+      border-radius: 12px;
+      z-index: 10000;
+      text-align: center;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      animation: fadeInOut 3s ease-in-out;
+    `;
+    notification.innerHTML = `
+      <h3 style="margin: 0 0 10px 0; color: #00D4FF;">🌞 Demo Mode Active</h3>
+      <p style="margin: 0; opacity: 0.8;">Showing sun path for San Francisco</p>
+    `;
     
-    // Update UI to show demo mode
-    this.updateStatus('Demo mode active (San Francisco)');
-    this.updateLocation({ lat: 37.7749, lon: -122.4194, accuracy: 10 });
+    // Add fade animation
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes fadeInOut {
+        0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+        20% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        80% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        100% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+      }
+    `;
+    document.head.appendChild(style);
     
-    // Enable toggle button in demo mode
-    this.toggleBtn.disabled = false;
-    this.locationBtn.textContent = 'Get Real Location';
+    document.body.appendChild(notification);
+    
+    // Remove notification after animation
+    setTimeout(() => {
+      notification.remove();
+      style.remove();
+    }, 3000);
   }
 
   private isIOSDevice(): boolean {
