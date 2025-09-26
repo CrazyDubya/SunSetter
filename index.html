@@ -211,14 +211,14 @@
         </div>
         
         <!-- Time Navigation Panel -->
-        <div id="timeControls" style="position: fixed; top: env(safe-area-inset-top, 100px); right: env(safe-area-inset-right, 10px); z-index: 1000; background: rgba(0, 0, 0, 0.8); padding: 15px; border-radius: 12px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: none;">
-            <div style="color: #007AFF; font-weight: 600; margin-bottom: 10px;">⏰ Time Navigation</div>
-            <input type="datetime-local" id="dateTimePicker" style="background: rgba(255, 255, 255, 0.1); color: white; border: 1px solid rgba(255, 255, 255, 0.3); padding: 8px; border-radius: 6px; font-size: 14px; width: 100%; margin-bottom: 10px;">
+        <div id="timeControls" style="position: fixed; top: env(safe-area-inset-top, 120px); right: env(safe-area-inset-right, 15px); z-index: 1000; background: rgba(0, 0, 0, 0.75); padding: 20px; border-radius: 16px; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); display: none; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);">
+            <div style="color: #00D4FF; font-weight: 600; margin-bottom: 12px; text-shadow: 0 0 10px rgba(0, 212, 255, 0.3);">⏰ Time Navigation</div>
+            <input type="datetime-local" id="dateTimePicker" style="background: rgba(255, 255, 255, 0.1); color: white; border: 1px solid rgba(255, 255, 255, 0.3); padding: 10px; border-radius: 8px; font-size: 14px; width: 100%; margin-bottom: 12px;">
             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                <button id="nextSunriseBtn" style="background: linear-gradient(135deg, #FF9500, #FF6B00); color: white; border: none; padding: 8px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;">🌅 Next Sunrise</button>
-                <button id="nextSunsetBtn" style="background: linear-gradient(135deg, #FF3B30, #D70015); color: white; border: none; padding: 8px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;">🌇 Next Sunset</button>
-                <button id="nowBtn" style="background: linear-gradient(135deg, #34C759, #28A745); color: white; border: none; padding: 8px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;">🕐 Now</button>
-                <button id="closeTimeBtn" style="background: rgba(120, 120, 128, 0.5); color: white; border: none; padding: 8px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;">✕ Close</button>
+                <button id="nextSunriseBtn" style="background: linear-gradient(145deg, #FF9500, #FF7A00); color: white; border: none; padding: 8px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; border: 1px solid rgba(255, 255, 255, 0.1);">🌅 Next Sunrise</button>
+                <button id="nextSunsetBtn" style="background: linear-gradient(145deg, #FF3B30, #D70015); color: white; border: none; padding: 8px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; border: 1px solid rgba(255, 255, 255, 0.1);">🌇 Next Sunset</button>
+                <button id="nowBtn" style="background: linear-gradient(145deg, #34C759, #28A745); color: white; border: none; padding: 8px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; border: 1px solid rgba(255, 255, 255, 0.1);">🕐 Now</button>
+                <button id="closeTimeBtn" style="background: rgba(60, 60, 67, 0.6); color: white; border: none; padding: 8px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; border: 1px solid rgba(255, 255, 255, 0.1);">✕ Close</button>
             </div>
         </div>
     </div>
