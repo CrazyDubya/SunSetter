@@ -48,10 +48,16 @@ export class RenderingAgent {
       this.renderer = new THREE.WebGLRenderer({ 
         canvas: this.canvas,
         alpha: true,
-        antialias: true
+        antialias: false, // Disable for performance
+        powerPreference: "low-power" // Optimize for battery life
       });
       this.renderer.setSize(window.innerWidth, window.innerHeight);
       this.renderer.setClearColor(0x87CEEB, 1); // Sky blue background
+      
+      // Set performance-friendly settings
+      const pixelRatio = Math.min(window.devicePixelRatio, 2);
+      this.renderer.setPixelRatio(pixelRatio);
+      
     } catch (error) {
       console.warn('WebGL not available, falling back to 2D canvas');
       this.setupCanvas2D();
@@ -164,65 +170,135 @@ export class RenderingAgent {
     const height = this.canvas.height;
     const centerX = width / 2;
     const centerY = height / 2;
-    const radius = Math.min(width, height) * 0.4;
+    const radius = Math.min(width, height) * 0.35;
 
-    // Clear canvas
-    ctx.fillStyle = '#87CEEB';
+    // Create beautiful gradient background
+    const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius * 1.5);
+    gradient.addColorStop(0, '#1e3c72');
+    gradient.addColorStop(0.5, '#2a5298');
+    gradient.addColorStop(1, '#0f1419');
+    ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
 
-    // Draw compass circle
-    ctx.strokeStyle = '#333';
-    ctx.lineWidth = 2;
+    // Draw horizon circle with glow effect
+    ctx.save();
+    ctx.shadowColor = 'rgba(135, 206, 235, 0.5)';
+    ctx.shadowBlur = 15;
+    ctx.strokeStyle = '#87ceeb';
+    ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
     ctx.stroke();
+    ctx.restore();
 
-    // Draw cardinal directions
-    ctx.fillStyle = '#333';
-    ctx.font = '16px Arial';
+    // Draw elevation rings for better depth perception
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.lineWidth = 1;
+    for (let elev = 15; elev <= 75; elev += 15) {
+      const ringRadius = radius * (1 - elev / 90);
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, ringRadius, 0, 2 * Math.PI);
+      ctx.stroke();
+    }
+
+    // Draw cardinal directions with better styling
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 18px -apple-system, BlinkMacSystemFont, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('N', centerX, centerY - radius - 10);
-    ctx.fillText('S', centerX, centerY + radius + 25);
-    ctx.textAlign = 'left';
-    ctx.fillText('E', centerX + radius + 10, centerY + 5);
-    ctx.textAlign = 'right';
-    ctx.fillText('W', centerX - radius - 10, centerY + 5);
+    ctx.textBaseline = 'middle';
+    
+    // Add text shadows for better visibility
+    ctx.save();
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetX = 1;
+    ctx.shadowOffsetY = 1;
+    
+    ctx.fillText('N', centerX, centerY - radius - 20);
+    ctx.fillText('S', centerX, centerY + radius + 20);
+    ctx.fillText('E', centerX + radius + 20, centerY);
+    ctx.fillText('W', centerX - radius - 20, centerY);
+    ctx.restore();
 
-    // Draw sun path
-    ctx.strokeStyle = '#ffaa00';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    let pathStarted = false;
+    // Draw sun path with gradient and improved styling
+    if (samples.length > 1) {
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      
+      // Create gradient for sun path
+      const pathGradient = ctx.createLinearGradient(0, centerY - radius, 0, centerY + radius);
+      pathGradient.addColorStop(0, '#ffd700'); // Gold at top
+      pathGradient.addColorStop(0.5, '#ffb347'); // Orange in middle
+      pathGradient.addColorStop(1, '#ff6b35'); // Red-orange at bottom
+      
+      ctx.strokeStyle = pathGradient;
+      ctx.shadowColor = 'rgba(255, 215, 0, 0.6)';
+      ctx.shadowBlur = 8;
+      
+      ctx.beginPath();
+      let pathStarted = false;
 
-    samples.forEach(sample => {
-      if (sample.el > -10) {
-        const { x, y } = this.azElToCanvas(sample.az - heading, sample.el, centerX, centerY, radius);
-        if (!pathStarted) {
-          ctx.moveTo(x, y);
-          pathStarted = true;
-        } else {
-          ctx.lineTo(x, y);
+      samples.forEach(sample => {
+        if (sample.el > -10) {
+          const { x, y } = this.azElToCanvas(sample.az - heading, sample.el, centerX, centerY, radius);
+          if (!pathStarted) {
+            ctx.moveTo(x, y);
+            pathStarted = true;
+          } else {
+            ctx.lineTo(x, y);
+          }
         }
-      }
-    });
-    ctx.stroke();
+      });
+      ctx.stroke();
+    }
 
-    // Draw current sun position
+    // Draw current sun position with enhanced styling
     const now = Date.now();
     const currentSample = this.findClosestSample(samples, now);
     
     if (currentSample && currentSample.el > -10) {
       const { x, y } = this.azElToCanvas(currentSample.az - heading, currentSample.el, centerX, centerY, radius);
       
-      ctx.fillStyle = '#ffff00';
+      // Draw sun glow
+      ctx.save();
+      const sunGradient = ctx.createRadialGradient(x, y, 0, x, y, 20);
+      sunGradient.addColorStop(0, 'rgba(255, 255, 0, 0.8)');
+      sunGradient.addColorStop(0.5, 'rgba(255, 215, 0, 0.4)');
+      sunGradient.addColorStop(1, 'rgba(255, 215, 0, 0)');
+      ctx.fillStyle = sunGradient;
       ctx.beginPath();
-      ctx.arc(x, y, 8, 0, 2 * Math.PI);
+      ctx.arc(x, y, 20, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.restore();
+      
+      // Draw sun body
+      ctx.fillStyle = '#ffff00';
+      ctx.shadowColor = '#ffd700';
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.arc(x, y, 10, 0, 2 * Math.PI);
       ctx.fill();
       
-      ctx.strokeStyle = '#ff6600';
+      // Draw sun border
+      ctx.strokeStyle = '#ff8c00';
       ctx.lineWidth = 2;
+      ctx.shadowBlur = 0;
       ctx.stroke();
+      
+      // Add current time label
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+      ctx.shadowBlur = 3;
+      const timeStr = new Date(now).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+      ctx.fillText(timeStr, x, y + 25);
     }
+    
+    // Reset shadow effects
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
   }
 
   startAnimationLoop() {
