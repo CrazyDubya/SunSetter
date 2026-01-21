@@ -5,6 +5,10 @@
 import * as THREE from 'three';
 import { SunSample } from '../ephemeris.js';
 
+// Constants
+const HORIZON_RADIUS = 100;
+const CARDINAL_MARKER_DISTANCE = 80;
+
 /**
  * Convert azimuth/elevation to 3D position
  */
@@ -95,7 +99,7 @@ export function createSunGlow(
  */
 export function createHorizonLine(heading: number): THREE.Line {
   const points: THREE.Vector3[] = [];
-  const radius = 100;
+  const radius = HORIZON_RADIUS;
   
   for (let angle = 0; angle <= 360; angle += 10) {
     const azimuth = angle - heading;
@@ -132,7 +136,7 @@ export function createCardinalDirections(
   directions.forEach(dir => {
     const group = new THREE.Group();
     const azimuth = dir.angle - heading;
-    const position = azElTo3D(azimuth, 0, 80);
+    const position = azElTo3D(azimuth, 0, CARDINAL_MARKER_DISTANCE);
 
     const geometry = new THREE.SphereGeometry(1, 16, 16);
     const material = new THREE.MeshBasicMaterial({ color: dir.color });
