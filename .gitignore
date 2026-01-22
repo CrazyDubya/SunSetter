@@ -33,3 +33,12 @@ logs
 # Temporary files
 .tmp/
 tmp/
+
+# Test artifacts
+coverage/
+.nyc_output/
+*.lcov
+test-results/
+playwright-report/
+screenshots/
+__snapshots__/
