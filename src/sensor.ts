@@ -2,34 +2,67 @@
  * Sensor Agent - Acquires real-time device data with fallbacks
  */
 
+/**
+ * Location data from the device's geolocation sensor
+ */
 export interface LocationData {
+  /** Latitude in degrees (-90 to 90, negative=South, positive=North) */
   lat: number;
+  /** Longitude in degrees (-180 to 180, negative=West, positive=East) */
   lon: number;
+  /** Altitude above sea level in meters (optional) */
   alt?: number;
+  /** Accuracy radius in meters */
   accuracy: number;
+  /** Timestamp when location was obtained */
   timestamp: number;
 }
 
+/**
+ * Device orientation data from the device's orientation sensors
+ */
 export interface OrientationData {
-  alpha: number;  // compass heading (0-360)
-  beta: number;   // front-to-back tilt (-180 to 180)
-  gamma: number;  // left-to-right tilt (-90 to 90)
+  /** Compass heading (0-360 degrees, 0=North, 90=East, 180=South, 270=West) */
+  alpha: number;
+  /** Front-to-back tilt (-180 to 180 degrees) */
+  beta: number;
+  /** Left-to-right tilt (-90 to 90 degrees) */
+  gamma: number;
+  /** Whether the orientation is absolute (true north) or relative */
   absolute: boolean;
 }
 
+/**
+ * Custom error class for sensor-related failures
+ * Provides typed error information for different sensor failure modes
+ */
 export class SensorError extends Error {
+  /**
+   * Creates a new sensor error
+   * @param message - Human-readable error description
+   * @param type - Type of sensor error (permission denied, timeout, or unavailable)
+   */
   constructor(message: string, public type: 'permission' | 'timeout' | 'unavailable') {
     super(message);
     this.name = 'SensorError';
   }
 }
 
+/**
+ * Sensor agent that acquires real-time device data with fallbacks
+ * Handles location, orientation, and camera access across different devices and browsers
+ * with mobile-specific optimizations and graceful error handling
+ */
 export class SensorAgent {
   private locationCache: LocationData | null = null;
   private orientationCache: OrientationData | null = null;
 
   /**
    * Get current location with enhanced mobile support
+   * Attempts high-accuracy first, falls back to low-accuracy if needed
+   * @param timeoutMs - Maximum time to wait for location in milliseconds (default: 15000)
+   * @returns Promise resolving to location data
+   * @throws {SensorError} If location cannot be obtained
    */
   async getLocation(timeoutMs: number = 15000): Promise<LocationData> {
     return new Promise((resolve, reject) => {
@@ -128,6 +161,9 @@ export class SensorAgent {
 
   /**
    * Get device orientation (compass heading)
+   * Handles iOS 13+ permission requirements automatically
+   * @returns Promise resolving to orientation data
+   * @throws {SensorError} If orientation cannot be obtained
    */
   async getOrientation(): Promise<OrientationData> {
     return new Promise((resolve, reject) => {
@@ -187,6 +223,10 @@ export class SensorAgent {
 
   /**
    * Get compass heading with fallback sources
+   * Tries multiple methods in order: absolute orientation, magnetic compass, manual fallback
+   * @param sourcePriority - Array of sources to try in order (default: ['true', 'mag', 'manual'])
+   * @returns Promise resolving to heading in degrees (0-360, 0=North)
+   * @throws {SensorError} If no heading source is available
    */
   async getHeading(sourcePriority: ('true' | 'mag' | 'manual')[] = ['true', 'mag', 'manual']): Promise<number> {
     for (const source of sourcePriority) {
@@ -220,6 +260,10 @@ export class SensorAgent {
 
   /**
    * Start video stream for AR with enhanced iOS support and camera switching
+   * Attempts to access device camera with optimal settings, falling back to basic constraints
+   * @param constraints - Media stream constraints (default: rear camera)
+   * @returns Promise resolving to MediaStream for the camera feed
+   * @throws {SensorError} If camera cannot be accessed
    */
   async startVideoStream(constraints: MediaStreamConstraints = { video: { facingMode: 'environment' }, audio: false }): Promise<MediaStream> {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -289,6 +333,8 @@ export class SensorAgent {
 
   /**
    * Request camera permissions explicitly for iOS
+   * Triggers the permission dialog without keeping the stream active
+   * @returns Promise resolving to true if permission granted, false otherwise
    */
   async requestCameraPermission(): Promise<boolean> {
     try {
@@ -318,6 +364,10 @@ export class SensorAgent {
 
   /**
    * Request permission for sensors
+   * Generic method to request any sensor permission
+   * @param type - Type of sensor to request ('geolocation', 'orientation', or 'camera')
+   * @returns Promise resolving to true if permission granted, false if denied
+   * @throws {SensorError} If permission request fails for reasons other than denial
    */
   async requestPermission(type: 'geolocation' | 'orientation' | 'camera'): Promise<boolean> {
     try {
@@ -343,6 +393,8 @@ export class SensorAgent {
 
   /**
    * Get cached location data
+   * Returns the most recently obtained location without requesting a new one
+   * @returns Cached location data or null if none available
    */
   getCachedLocation(): LocationData | null {
     return this.locationCache;
@@ -350,6 +402,8 @@ export class SensorAgent {
 
   /**
    * Get cached orientation data
+   * Returns the most recently obtained orientation without requesting a new one
+   * @returns Cached orientation data or null if none available
    */
   getCachedOrientation(): OrientationData | null {
     return this.orientationCache;
@@ -357,6 +411,10 @@ export class SensorAgent {
 
   /**
    * Switch camera between front and back
+   * Stops the current stream and starts a new one with the opposite camera
+   * @param currentStream - The currently active MediaStream to switch from
+   * @returns Promise resolving to new MediaStream with switched camera
+   * @throws {SensorError} If camera switching fails
    */
   async switchCamera(currentStream: MediaStream): Promise<MediaStream> {
     // Stop current stream
@@ -400,6 +458,8 @@ export class SensorAgent {
 
   /**
    * Get available camera devices
+   * Enumerates all video input devices on the system
+   * @returns Promise resolving to array of MediaDeviceInfo for cameras
    */
   async getAvailableCameras(): Promise<MediaDeviceInfo[]> {
     try {

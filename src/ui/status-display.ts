@@ -1,12 +1,14 @@
 /**
  * Status Display Module
  * Handles all status, location, and sun/moon information display
+ * Provides functions for updating various UI elements with celestial data
  */
 
 import type { AppStatus } from '../orchestrator.js';
 
 /**
  * Updates the main status text display
+ * @param text - Status message to display
  */
 export function updateStatus(text: string): void {
   const statusElement = document.getElementById('statusText');
@@ -17,6 +19,7 @@ export function updateStatus(text: string): void {
 
 /**
  * Updates the location display with coordinates and accuracy
+ * @param location - Location data with latitude, longitude, and accuracy
  */
 export function updateLocation(location: { lat: number; lon: number; accuracy: number }): void {
   const locationElement = document.getElementById('locationText');
@@ -30,6 +33,8 @@ export function updateLocation(location: { lat: number; lon: number; accuracy: n
 
 /**
  * Updates the sun information display with azimuth, elevation, and visibility
+ * Shows cardinal direction, angle, and whether the sun is above the horizon
+ * @param samples - Array of sun position samples (finds closest to current time)
  */
 export function updateSunInfo(samples: Array<{ t: number; az: number; el: number }>): void {
   const sunElement = document.getElementById('sunText');
@@ -71,6 +76,10 @@ export function updateSunInfo(samples: Array<{ t: number; az: number; el: number
 
 /**
  * Updates the moon information display
+ * Shows moon position, visibility, illumination percentage, and phase
+ * @param ephemeris - Ephemeris agent for calculating moon position
+ * @param location - User's location for moon calculations
+ * @param timestamp - Time to calculate moon position for
  */
 export function updateMoonInfo(
   ephemeris: any,
@@ -113,6 +122,8 @@ export function updateMoonInfo(
 
 /**
  * Displays a success message as a temporary notification
+ * Shows a green notification that auto-dismisses after 4 seconds
+ * @param message - Success message text to display
  */
 export function showSuccessMessage(message: string): void {
   const success = document.createElement('div');
@@ -127,6 +138,8 @@ export function showSuccessMessage(message: string): void {
 
 /**
  * Displays an error message as a temporary notification
+ * Shows a red notification that auto-dismisses after 4 seconds
+ * @param message - Error message text to display
  */
 export function showErrorMessage(message: string): void {
   const error = document.createElement('div');
@@ -141,6 +154,7 @@ export function showErrorMessage(message: string): void {
 
 /**
  * Shows a demo mode notification
+ * Displays when the app is running in demo mode with default location
  */
 export function showDemoNotification(): void {
   const notification = document.createElement('div');
@@ -185,6 +199,9 @@ export function showDemoNotification(): void {
 
 /**
  * Converts AppStatus to human-readable text
+ * Maps application state to user-friendly status messages
+ * @param status - Application status object
+ * @returns Human-readable status text
  */
 export function getStatusText(status: AppStatus): string {
   switch (status.state) {
@@ -209,6 +226,8 @@ export function getStatusText(status: AppStatus): string {
 
 /**
  * Formats a timestamp into a human-readable date/time string
+ * @param timestamp - Unix timestamp in milliseconds
+ * @returns Localized date/time string
  */
 export function formatDateTime(timestamp: number): string {
   const date = new Date(timestamp);

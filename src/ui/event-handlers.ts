@@ -1,6 +1,7 @@
 /**
  * Event Handlers Module
- * Contains all button and UI event handler functions
+ * Contains all button and UI event handler functions for user interactions
+ * Provides clean separation between UI events and application logic
  */
 
 import type { OrchestratorAgent } from '../orchestrator.js';
@@ -9,6 +10,9 @@ import { requestCameraWithUI, showCameraHelp } from './permission-manager.js';
 
 /**
  * Handles location button click event
+ * Requests location permission and updates UI based on result
+ * @param orchestrator - The orchestrator agent instance
+ * @param locationBtn - The location button element to update
  */
 export async function handleLocationButton(
   orchestrator: OrchestratorAgent,
@@ -25,6 +29,9 @@ export async function handleLocationButton(
 
 /**
  * Handles camera permission button click event
+ * Shows platform-specific permission UI and handles the permission request
+ * @param orchestrator - The orchestrator agent instance
+ * @param cameraBtn - The camera button element to update
  */
 export async function handleCameraButton(
   orchestrator: OrchestratorAgent,
@@ -57,6 +64,10 @@ export async function handleCameraButton(
 
 /**
  * Handles toggle view button click event
+ * Switches between 2D compass view and AR camera overlay
+ * @param orchestrator - The orchestrator agent instance
+ * @param toggleBtn - The toggle button element to update
+ * @param switchCameraBtn - The switch camera button to show/hide
  */
 export async function handleToggleView(
   orchestrator: OrchestratorAgent,
@@ -74,6 +85,9 @@ export async function handleToggleView(
 
 /**
  * Handles switch camera button click event
+ * Switches between front and rear cameras in AR mode
+ * @param orchestrator - The orchestrator agent instance
+ * @param switchCameraBtn - The switch camera button element to update
  */
 export async function handleSwitchCamera(
   orchestrator: OrchestratorAgent,
@@ -96,6 +110,9 @@ export async function handleSwitchCamera(
 
 /**
  * Handles force refresh button click event
+ * Clears all caches and reloads the application
+ * @param refreshBtn - The refresh button element to update
+ * @param clearCachesFn - Function that clears application caches
  */
 export async function handleRefreshButton(
   refreshBtn: HTMLButtonElement,
@@ -120,6 +137,9 @@ export async function handleRefreshButton(
 
 /**
  * Sets up time navigation controls
+ * Configures event listeners for time travel features (jump to sunrise/sunset, pick time)
+ * @param orchestrator - The orchestrator agent instance
+ * @param ephemeris - The ephemeris agent for celestial calculations
  */
 export function setupTimeNavigation(
   orchestrator: OrchestratorAgent,

@@ -8,6 +8,7 @@ import { findClosestSample, azElTo3D, azElToCanvas, latLonToGlobePosition, celes
 
 /**
  * Manages WebGL rendering, scene setup, and 3D globe visualization
+ * Handles both WebGL-based Three.js rendering and fallback 2D canvas rendering
  */
 export class WebGLRenderer {
   private canvas: HTMLCanvasElement;
@@ -20,6 +21,10 @@ export class WebGLRenderer {
   private moonMesh: THREE.Mesh | null = null;
   private userLocationMesh: THREE.Mesh | null = null;
 
+  /**
+   * Creates a new WebGL renderer instance
+   * @param canvas - The HTML canvas element to render to
+   */
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.scene = new THREE.Scene();
@@ -78,7 +83,10 @@ export class WebGLRenderer {
   }
 
   /**
-   * Render in 2D mode using Three.js
+   * Render in 2D mode using Three.js with WebGL acceleration
+   * Displays sun position and path on a compass-style view
+   * @param samples - Array of sun position samples over time
+   * @param heading - Device compass heading in degrees (0=North, 90=East, 180=South, 270=West)
    */
   render2DThreeJS(samples: SunSample[], heading: number) {
     if (!this.renderer || !this.sunMesh) return;
@@ -118,7 +126,10 @@ export class WebGLRenderer {
   }
 
   /**
-   * Fallback 2D canvas rendering
+   * Fallback 2D canvas rendering for devices without WebGL support
+   * Provides a compass-style visualization with gradient sky and sun path
+   * @param samples - Array of sun position samples over time
+   * @param heading - Device compass heading in degrees (0=North, 90=East, 180=South, 270=West)
    */
   render2DCanvas(samples: SunSample[], heading: number) {
     const ctx = this.canvas.getContext('2d');
@@ -248,6 +259,8 @@ export class WebGLRenderer {
 
   /**
    * Update globe rotation and animations for 2D mode
+   * Creates a gentle bobbing and rotating effect for the 3D globe
+   * @param time - Current timestamp in milliseconds
    */
   updateGlobeAnimation(time: number) {
     if (!this.globeGroup) return;
@@ -262,6 +275,8 @@ export class WebGLRenderer {
 
   /**
    * Update celestial body animations for 2D mode
+   * Animates sun glow pulsing and moon phase transitions
+   * @param time - Current timestamp in milliseconds
    */
   updateCelestialAnimations(time: number) {
     if (!this.sunMesh || !this.moonMesh) return;
@@ -460,6 +475,10 @@ export class WebGLRenderer {
 
   /**
    * Update celestial positions on the globe
+   * Updates sun and moon positions, scales, and visibility based on current celestial data
+   * @param celestialData - Current sun and moon position data
+   * @param userLat - User's latitude in degrees
+   * @param userLon - User's longitude in degrees
    */
   updateCelestialPositions(celestialData: CelestialData, userLat: number, userLon: number): void {
     if (!this.globeGroup || !this.moonMesh || !this.userLocationMesh) return;
@@ -543,22 +562,42 @@ export class WebGLRenderer {
     });
   }
 
+  /**
+   * Get the Three.js WebGL renderer instance
+   * @returns The WebGL renderer or null if WebGL is not available
+   */
   getRenderer(): THREE.WebGLRenderer | null {
     return this.renderer;
   }
 
+  /**
+   * Get the Three.js scene object
+   * @returns The Three.js scene containing all 3D objects
+   */
   getScene(): THREE.Scene {
     return this.scene;
   }
 
+  /**
+   * Get the Three.js camera
+   * @returns The perspective camera used for rendering
+   */
   getCamera(): THREE.PerspectiveCamera {
     return this.camera;
   }
 
+  /**
+   * Get the globe group containing Earth and celestial objects
+   * @returns The Three.js group or null if not initialized
+   */
   getGlobeGroup(): THREE.Group | null {
     return this.globeGroup;
   }
 
+  /**
+   * Dispose of all WebGL resources and clean up
+   * Should be called when the renderer is no longer needed
+   */
   dispose() {
     if (this.renderer) {
       this.renderer.dispose();

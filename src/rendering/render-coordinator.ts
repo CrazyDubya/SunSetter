@@ -8,13 +8,27 @@ import { SunSample, CelestialData } from '../ephemeris.js';
 import { WebGLRenderer } from './webgl-renderer.js';
 import { ARRenderer } from './ar-renderer.js';
 
+/**
+ * Options for configuring the rendering system
+ */
 export interface RenderOptions {
+  /** Maximum frames per second to render (default: unlimited) */
   fpsLimit?: number;
+  /** Whether to force fallback 2D canvas rendering (default: false) */
   fallback?: boolean;
 }
 
 /**
  * Main rendering coordinator that manages both 2D and AR rendering modes
+ * This is the primary public API for the rendering system. It coordinates between
+ * WebGL rendering (3D globe view) and AR mode (camera overlay with sun tracking).
+ * @example
+ * ```typescript
+ * const container = document.getElementById('app');
+ * const renderer = new RenderingAgent(container);
+ * renderer.render2D(sunSamples, deviceHeading);
+ * renderer.startAnimationLoop();
+ * ```
  */
 export class RenderingAgent {
   private canvas: HTMLCanvasElement;
@@ -27,6 +41,10 @@ export class RenderingAgent {
   private latestSamples: SunSample[] = [];
   private latestHeading: number = 0;
 
+  /**
+   * Creates a new rendering coordinator
+   * @param container - HTML element to render into (canvas will be created and appended)
+   */
   constructor(container: HTMLElement) {
     this.canvas = document.createElement('canvas');
     this.canvas.style.width = '100%';
@@ -40,6 +58,9 @@ export class RenderingAgent {
 
   /**
    * Render in 2D mode (compass-style view)
+   * Displays the sun's position and path on a compass-style interface
+   * @param samples - Array of sun position samples over time
+   * @param heading - Device compass heading in degrees (default: 0, North)
    */
   render2D(samples: SunSample[], heading: number = 0) {
     if (this.webglRenderer.getRenderer()) {
@@ -51,6 +72,8 @@ export class RenderingAgent {
 
   /**
    * Start the animation loop for continuous rendering
+   * Must be called after initial data is set up. The loop will continuously
+   * render the scene and update animations until dispose() is called.
    */
   startAnimationLoop() {
     if (this.animationId !== null) {
@@ -89,6 +112,9 @@ export class RenderingAgent {
 
   /**
    * Update data for the animation loop
+   * Call this whenever sun samples or heading changes to update the visualization
+   * @param samples - Updated array of sun position samples
+   * @param heading - Updated device compass heading in degrees
    */
   public updateData(samples: SunSample[], heading: number) {
     this.latestSamples = samples;
@@ -97,6 +123,7 @@ export class RenderingAgent {
 
   /**
    * Get current rendering mode
+   * @returns Current mode: '2D' for compass view or 'AR' for camera overlay
    */
   get currentMode(): '2D' | 'AR' {
     return this.mode;
@@ -104,6 +131,9 @@ export class RenderingAgent {
 
   /**
    * Toggle between 2D and AR modes
+   * Switches the visualization between compass view (2D) and camera overlay (AR)
+   * @param stream - Optional MediaStream for AR mode camera feed
+   * @returns The new mode after toggling
    */
   toggleMode(stream?: MediaStream): '2D' | 'AR' {
     this.mode = this.mode === '2D' ? 'AR' : '2D';
@@ -155,6 +185,9 @@ export class RenderingAgent {
 
   /**
    * Take a snapshot of current view
+   * Captures the current rendering as a PNG image
+   * @param _metadata - Optional metadata to embed (not currently used)
+   * @returns Data URL string of the captured image (PNG format)
    */
   snapshot(_metadata?: any): string {
     return this.canvas.toDataURL('image/png');
@@ -162,13 +195,19 @@ export class RenderingAgent {
 
   /**
    * Update celestial positions on the globe
+   * Updates the 3D positions of sun and moon on the globe visualization
+   * @param celestialData - Current sun and moon position data
+   * @param userLat - User's latitude in degrees
+   * @param userLon - User's longitude in degrees
    */
   updateCelestialPositions(celestialData: CelestialData, userLat: number, userLon: number): void {
     this.webglRenderer.updateCelestialPositions(celestialData, userLat, userLon);
   }
 
   /**
-   * Dispose of resources
+   * Dispose of resources and clean up
+   * Stops the animation loop and releases all rendering resources
+   * Should be called when the renderer is no longer needed
    */
   dispose() {
     if (this.animationId !== null) {

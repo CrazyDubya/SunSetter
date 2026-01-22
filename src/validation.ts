@@ -1,11 +1,15 @@
 /**
  * Input validation using Zod
  * Ensures all location, time, and sensor data is properly validated
+ * Provides both throwing and safe (non-throwing) validation functions
  */
 
 import { z } from 'zod';
 
-// Location validation schemas
+/**
+ * Schema for validating location data
+ * Enforces valid latitude, longitude, and altitude ranges
+ */
 export const LocationSchema = z.object({
   lat: z.number()
     .min(-90, 'Latitude must be >= -90')
@@ -25,9 +29,15 @@ export const LocationSchema = z.object({
     .optional()
 });
 
+/**
+ * Validated location data type
+ */
 export type ValidatedLocation = z.infer<typeof LocationSchema>;
 
-// Timestamp validation
+/**
+ * Schema for validating timestamps
+ * Ensures timestamps are within reasonable range (1900-2100)
+ */
 export const TimestampSchema = z.number()
   .int('Timestamp must be an integer')
   .refine(
@@ -39,7 +49,10 @@ export const TimestampSchema = z.number()
     'Timestamp must be before 2100'
   );
 
-// Track parameters validation
+/**
+ * Schema for validating track computation parameters
+ * Ensures all parameters for sun track calculation are within valid ranges
+ */
 export const TrackParamsSchema = z.object({
   lat: z.number().min(-90).max(90),
   lon: z.number().min(-180).max(180),
@@ -54,9 +67,15 @@ export const TrackParamsSchema = z.object({
     .max(1440, 'Step must be <= 1440 minutes (1 day)')
 });
 
+/**
+ * Validated track parameters type
+ */
 export type ValidatedTrackParams = z.infer<typeof TrackParamsSchema>;
 
-// Sensor orientation validation
+/**
+ * Schema for validating device orientation data
+ * Validates alpha (compass), beta (tilt), and gamma (roll) angles
+ */
 export const OrientationSchema = z.object({
   alpha: z.number().min(0).max(360).nullable(),
   beta: z.number().min(-180).max(180).nullable(),
@@ -64,14 +83,22 @@ export const OrientationSchema = z.object({
   absolute: z.boolean().optional()
 });
 
+/**
+ * Validated orientation data type
+ */
 export type ValidatedOrientation = z.infer<typeof OrientationSchema>;
 
-// Heading validation (compass direction)
+/**
+ * Schema for validating compass heading (0-360 degrees)
+ */
 export const HeadingSchema = z.number()
   .min(0, 'Heading must be >= 0')
   .max(360, 'Heading must be <= 360');
 
-// Sun/Moon sample validation
+/**
+ * Schema for validating sun position samples
+ * Ensures azimuth, elevation, and timestamp are within valid ranges
+ */
 export const SunSampleSchema = z.object({
   t: TimestampSchema,
   az: z.number().min(0).max(360),
@@ -80,8 +107,15 @@ export const SunSampleSchema = z.object({
   error: z.string().optional()
 });
 
+/**
+ * Validated sun sample type
+ */
 export type ValidatedSunSample = z.infer<typeof SunSampleSchema>;
 
+/**
+ * Schema for validating moon position samples
+ * Includes phase, illumination, and distance validation
+ */
 export const MoonSampleSchema = z.object({
   t: TimestampSchema,
   az: z.number().min(0).max(360),
@@ -92,64 +126,143 @@ export const MoonSampleSchema = z.object({
   distance: z.number().positive()
 });
 
+/**
+ * Validated moon sample type
+ */
 export type ValidatedMoonSample = z.infer<typeof MoonSampleSchema>;
 
-// Validation helper functions
+/**
+ * Validate location data (throws on error)
+ * @param data - Unknown data to validate
+ * @returns Validated location data
+ * @throws {ZodError} If validation fails
+ */
 export function validateLocation(data: unknown): ValidatedLocation {
   return LocationSchema.parse(data);
 }
 
+/**
+ * Validate timestamp (throws on error)
+ * @param data - Unknown data to validate
+ * @returns Validated timestamp
+ * @throws {ZodError} If validation fails
+ */
 export function validateTimestamp(data: unknown): number {
   return TimestampSchema.parse(data);
 }
 
+/**
+ * Validate track parameters (throws on error)
+ * @param data - Unknown data to validate
+ * @returns Validated track parameters
+ * @throws {ZodError} If validation fails
+ */
 export function validateTrackParams(data: unknown): ValidatedTrackParams {
   return TrackParamsSchema.parse(data);
 }
 
+/**
+ * Validate orientation data (throws on error)
+ * @param data - Unknown data to validate
+ * @returns Validated orientation data
+ * @throws {ZodError} If validation fails
+ */
 export function validateOrientation(data: unknown): ValidatedOrientation {
   return OrientationSchema.parse(data);
 }
 
+/**
+ * Validate compass heading (throws on error)
+ * @param data - Unknown data to validate
+ * @returns Validated heading in degrees
+ * @throws {ZodError} If validation fails
+ */
 export function validateHeading(data: unknown): number {
   return HeadingSchema.parse(data);
 }
 
+/**
+ * Validate sun sample (throws on error)
+ * @param data - Unknown data to validate
+ * @returns Validated sun sample
+ * @throws {ZodError} If validation fails
+ */
 export function validateSunSample(data: unknown): ValidatedSunSample {
   return SunSampleSchema.parse(data);
 }
 
+/**
+ * Validate moon sample (throws on error)
+ * @param data - Unknown data to validate
+ * @returns Validated moon sample
+ * @throws {ZodError} If validation fails
+ */
 export function validateMoonSample(data: unknown): ValidatedMoonSample {
   return MoonSampleSchema.parse(data);
 }
 
-// Safe parsing (returns success/error instead of throwing)
+/**
+ * Safe validation for location data (returns result object instead of throwing)
+ * @param data - Unknown data to validate
+ * @returns Validation result with success boolean and data or error
+ */
 export function safeValidateLocation(data: unknown) {
   return LocationSchema.safeParse(data);
 }
 
+/**
+ * Safe validation for timestamp (returns result object instead of throwing)
+ * @param data - Unknown data to validate
+ * @returns Validation result with success boolean and data or error
+ */
 export function safeValidateTimestamp(data: unknown) {
   return TimestampSchema.safeParse(data);
 }
 
+/**
+ * Safe validation for track parameters (returns result object instead of throwing)
+ * @param data - Unknown data to validate
+ * @returns Validation result with success boolean and data or error
+ */
 export function safeValidateTrackParams(data: unknown) {
   return TrackParamsSchema.safeParse(data);
 }
 
+/**
+ * Safe validation for orientation data (returns result object instead of throwing)
+ * @param data - Unknown data to validate
+ * @returns Validation result with success boolean and data or error
+ */
 export function safeValidateOrientation(data: unknown) {
   return OrientationSchema.safeParse(data);
 }
 
+/**
+ * Safe validation for heading (returns result object instead of throwing)
+ * @param data - Unknown data to validate
+ * @returns Validation result with success boolean and data or error
+ */
 export function safeValidateHeading(data: unknown) {
   return HeadingSchema.safeParse(data);
 }
 
-// Utility: Validate array of samples
+/**
+ * Validate an array of sun samples (throws on error)
+ * @param data - Unknown data to validate
+ * @returns Array of validated sun samples
+ * @throws {ZodError} If validation fails
+ */
 export function validateSunSamples(data: unknown): ValidatedSunSample[] {
   const ArraySchema = z.array(SunSampleSchema);
   return ArraySchema.parse(data);
 }
 
+/**
+ * Validate an array of moon samples (throws on error)
+ * @param data - Unknown data to validate
+ * @returns Array of validated moon samples
+ * @throws {ZodError} If validation fails
+ */
 export function validateMoonSamples(data: unknown): ValidatedMoonSample[] {
   const ArraySchema = z.array(MoonSampleSchema);
   return ArraySchema.parse(data);

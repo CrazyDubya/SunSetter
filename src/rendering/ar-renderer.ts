@@ -8,6 +8,8 @@ import { findClosestSample, azElTo3D, getARDistance } from './render-state.js';
 
 /**
  * Manages AR-specific rendering with camera overlay and sun tracking
+ * Handles real-time sun position overlay on camera feed with optimized
+ * path rendering and sunrise/sunset markers
  */
 export class ARRenderer {
   private scene: THREE.Scene;
@@ -16,12 +18,20 @@ export class ARRenderer {
   private lastARSamples: SunSample[] = [];
   private arObjectsCreated: boolean = false;
 
+  /**
+   * Creates a new AR renderer
+   * @param scene - The Three.js scene to add AR objects to
+   */
   constructor(scene: THREE.Scene) {
     this.scene = scene;
   }
 
   /**
    * Render in AR mode with optimized updates
+   * Only recreates sun path and markers when heading or samples change significantly,
+   * while updating the current sun marker every frame
+   * @param samples - Array of sun position samples over time
+   * @param heading - Device compass heading in degrees
    */
   renderAR(samples: SunSample[], heading: number) {
     const headingChanged = Math.abs(heading - this.lastARHeading) > 1.5;
@@ -200,6 +210,7 @@ export class ARRenderer {
 
   /**
    * Update pulsing animations for markers
+   * Creates breathing/pulsing effect for AR markers to draw attention
    */
   updatePulsingAnimations() {
     const time = Date.now() * 0.002;
@@ -215,6 +226,8 @@ export class ARRenderer {
 
   /**
    * Reset AR tracking state
+   * Clears cached data to force a full regeneration of AR objects
+   * Should be called when switching to AR mode or resetting the view
    */
   reset() {
     this.lastARHeading = -999;

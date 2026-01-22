@@ -1,10 +1,12 @@
 /**
  * Permission Manager Module
  * Handles camera permission requests and related UI flows
+ * Provides platform-specific guidance for iOS and Android users
  */
 
 /**
  * Checks if the current device is an iOS device
+ * @returns True if device is iPad, iPhone, or iPod
  */
 export function isIOSDevice(): boolean {
   return /iPad|iPhone|iPod/.test(navigator.userAgent);
@@ -12,6 +14,7 @@ export function isIOSDevice(): boolean {
 
 /**
  * Shows detailed camera setup instructions for iOS users
+ * Displays a modal with step-by-step instructions for enabling camera in Safari
  */
 export function showIOSCameraInstructions(): void {
   const instructions = document.createElement('div');
@@ -32,6 +35,7 @@ export function showIOSCameraInstructions(): void {
 
 /**
  * Shows help dialog for camera access issues
+ * Displays platform-specific troubleshooting steps for camera permissions
  */
 export function showCameraHelp(): void {
   const help = document.createElement('div');
@@ -64,6 +68,7 @@ export function showCameraHelp(): void {
 
 /**
  * Requests camera permission with appropriate UI based on platform
+ * Shows iOS-specific instructions on iOS devices before requesting permission
  * @param requestPermissionFn - Function that requests camera permission
  * @returns Promise that resolves to true if permission granted, false otherwise
  */
