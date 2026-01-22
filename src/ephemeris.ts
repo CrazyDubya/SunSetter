@@ -3,44 +3,95 @@
  * Based on NOAA Solar Position Algorithm (SPA)
  */
 
+/**
+ * Sun position sample at a specific time
+ */
 export interface SunSample {
-  t: number;      // timestamp
-  az: number;     // azimuth in degrees (0=N, 90=E, 180=S, 270=W)
-  el: number;     // elevation in degrees (0=horizon, 90=zenith)
-  error?: string; // optional error message
-  mass?: number;  // relative visual mass/size
+  /** Timestamp in milliseconds */
+  t: number;
+  /** Azimuth in degrees (0=North, 90=East, 180=South, 270=West) */
+  az: number;
+  /** Elevation in degrees (0=horizon, 90=zenith, negative=below horizon) */
+  el: number;
+  /** Optional error message if calculation failed */
+  error?: string;
+  /** Relative visual mass/size (varies with Earth-Sun distance) */
+  mass?: number;
 }
 
+/**
+ * Moon position sample at a specific time
+ */
 export interface MoonSample {
-  t: number;      // timestamp
-  az: number;     // azimuth in degrees
-  el: number;     // elevation in degrees
-  phase: number;  // moon phase (0=new, 0.5=full, 1=new)
-  illumination: number; // fraction illuminated (0-1)
-  mass: number;   // relative visual mass/size
-  distance: number; // distance from Earth in km
+  /** Timestamp in milliseconds */
+  t: number;
+  /** Azimuth in degrees (0=North, 90=East, 180=South, 270=West) */
+  az: number;
+  /** Elevation in degrees (0=horizon, 90=zenith, negative=below horizon) */
+  el: number;
+  /** Moon phase (0=new moon, 0.5=full moon, 1=new moon) */
+  phase: number;
+  /** Fraction of moon illuminated (0=dark, 1=fully lit) */
+  illumination: number;
+  /** Relative visual mass/size (varies with Earth-Moon distance) */
+  mass: number;
+  /** Distance from Earth in kilometers */
+  distance: number;
 }
 
+/**
+ * Combined celestial data for sun and moon
+ */
 export interface CelestialData {
+  /** Current sun position */
   sun: SunSample;
+  /** Current moon position */
   moon: MoonSample;
 }
 
+/**
+ * Location parameters for ephemeris calculations
+ */
 export interface LocationParams {
-  lat: number;    // latitude in degrees
-  lon: number;    // longitude in degrees
-  alt?: number;   // altitude in meters (default: 0)
+  /** Latitude in degrees (-90 to 90, negative=South, positive=North) */
+  lat: number;
+  /** Longitude in degrees (-180 to 180, negative=West, positive=East) */
+  lon: number;
+  /** Altitude above sea level in meters (default: 0) */
+  alt?: number;
 }
 
+/**
+ * Parameters for computing a sun track over time
+ */
 export interface TrackParams extends LocationParams {
-  t0: number;      // start timestamp
-  durationH: number; // duration in hours
-  stepMin: number;   // step in minutes
+  /** Start timestamp in milliseconds */
+  t0: number;
+  /** Duration of track in hours */
+  durationH: number;
+  /** Time step between samples in minutes */
+  stepMin: number;
 }
 
+/**
+ * Ephemeris agent that computes sun and moon positions offline
+ * Uses simplified but accurate solar position algorithms based on NOAA
+ * and lunar position algorithms for offline celestial calculations
+ * @example
+ * ```typescript
+ * const ephemeris = new EphemerisAgent();
+ * const samples = ephemeris.computeTrack({
+ *   lat: 37.7749, lon: -122.4194, t0: Date.now(),
+ *   durationH: 24, stepMin: 5
+ * });
+ * ```
+ */
 export class EphemerisAgent {
   /**
    * Compute sun track for a given time period
+   * Generates an array of sun position samples at regular intervals
+   * @param params - Track parameters including location, time range, and sample rate
+   * @returns Array of sun position samples
    */
   computeTrack(params: TrackParams): SunSample[] {
     const { lat, lon, alt = 0, t0, durationH, stepMin } = params;
@@ -64,7 +115,13 @@ export class EphemerisAgent {
 
   /**
    * Compute sun position for a specific time and location
-   * Simple but accurate solar position algorithm
+   * Simple but accurate solar position algorithm based on day of year,
+   * equation of time, and solar declination
+   * @param lat - Latitude in degrees
+   * @param lon - Longitude in degrees
+   * @param _alt - Altitude in meters (currently unused but reserved for future)
+   * @param timestamp - Unix timestamp in milliseconds
+   * @returns Object with elevation and azimuth in degrees
    */
   computeSunPosition(lat: number, lon: number, _alt: number, timestamp: number) {
     const date = new Date(timestamp);
@@ -114,6 +171,11 @@ export class EphemerisAgent {
 
   /**
    * Solve for sunrise and sunset times
+   * Finds the times when the sun crosses the horizon (-0.833° for atmospheric refraction)
+   * @param lat - Latitude in degrees
+   * @param lon - Longitude in degrees
+   * @param date - Date to find sunrise/sunset for
+   * @returns Object with sunrise and sunset timestamps (0 if not found)
    */
   solveSunriseSunset(lat: number, lon: number, date: Date): { sunrise: number; sunset: number } {
     const samples = 48; // Every 30 minutes
@@ -143,6 +205,11 @@ export class EphemerisAgent {
 
   /**
    * Compute moon position for a specific time and location
+   * Uses simplified lunar position formulas with mean longitude, elongation, and anomaly
+   * @param lat - Latitude in degrees
+   * @param lon - Longitude in degrees
+   * @param timestamp - Unix timestamp in milliseconds
+   * @returns Moon sample with position, phase, and illumination data
    */
   computeMoonPosition(lat: number, lon: number, timestamp: number): MoonSample {
     const date = new Date(timestamp);
@@ -250,6 +317,11 @@ export class EphemerisAgent {
 
   /**
    * Get celestial data (sun and moon) for a specific time
+   * Convenience method to get both sun and moon positions at once
+   * @param lat - Latitude in degrees
+   * @param lon - Longitude in degrees
+   * @param timestamp - Unix timestamp in milliseconds
+   * @returns Combined sun and moon position data
    */
   getCelestialData(lat: number, lon: number, timestamp: number): CelestialData {
     const sunPosition = this.computeSunPosition(lat, lon, 0, timestamp);
@@ -314,6 +386,11 @@ export class EphemerisAgent {
 
   /**
    * Find next sunrise from given timestamp
+   * Searches forward in time for the next sunrise event
+   * @param lat - Latitude in degrees
+   * @param lon - Longitude in degrees
+   * @param fromTime - Starting timestamp to search from (milliseconds)
+   * @returns Object with sunrise time and azimuth, or {time: 0, azimuth: 0} if not found
    */
   findNextSunrise(lat: number, lon: number, fromTime: number): { time: number; azimuth: number } {
     const startTime = fromTime;
@@ -334,6 +411,11 @@ export class EphemerisAgent {
 
   /**
    * Find next sunset from given timestamp
+   * Searches forward in time for the next sunset event
+   * @param lat - Latitude in degrees
+   * @param lon - Longitude in degrees
+   * @param fromTime - Starting timestamp to search from (milliseconds)
+   * @returns Object with sunset time and azimuth, or {time: 0, azimuth: 0} if not found
    */
   findNextSunset(lat: number, lon: number, fromTime: number): { time: number; azimuth: number } {
     const startTime = fromTime;
@@ -354,6 +436,11 @@ export class EphemerisAgent {
 
   /**
    * Get celestial data for any timestamp (past or future)
+   * Alias for getCelestialData to make intent clearer when dealing with historical/future times
+   * @param lat - Latitude in degrees
+   * @param lon - Longitude in degrees
+   * @param timestamp - Unix timestamp in milliseconds (can be past or future)
+   * @returns Combined sun and moon position data for the specified time
    */
   getCelestialDataForTime(lat: number, lon: number, timestamp: number): CelestialData {
     const sunPosition = this.computeSunPosition(lat, lon, 0, timestamp);

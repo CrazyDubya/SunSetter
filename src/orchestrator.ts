@@ -6,16 +6,39 @@ import { EphemerisAgent, SunSample, TrackParams } from './ephemeris.js';
 import { SensorAgent, LocationData, SensorError } from './sensor.js';
 import { RenderingAgent } from './rendering.js';
 
+/**
+ * Application state representing the current phase of execution
+ */
 export type AppState = 'init' | 'permissions' | 'sensing' | 'computing' | 'rendering' | 'error' | 'fallback';
 
+/**
+ * Application status information
+ */
 export interface AppStatus {
+  /** Current application state */
   state: AppState;
+  /** Confidence level (0-100) in the current data/state */
   confidence: number;
+  /** User's location data if available */
   location?: LocationData;
+  /** Computed sun position samples if available */
   samples?: SunSample[];
+  /** Error message if state is 'error' */
   error?: string;
 }
 
+/**
+ * Main orchestrator that sequences phases, evaluates states, and triggers adaptations
+ * Coordinates between sensors, ephemeris calculations, and rendering to provide
+ * a seamless user experience across different device capabilities and permissions.
+ * @example
+ * ```typescript
+ * const container = document.getElementById('app');
+ * const orchestrator = new OrchestratorAgent(container);
+ * await orchestrator.initialize();
+ * await orchestrator.requestLocation();
+ * ```
+ */
 export class OrchestratorAgent {
   private ephemeris: EphemerisAgent;
   private sensor: SensorAgent;
@@ -26,6 +49,10 @@ export class OrchestratorAgent {
   private currentTimestamp: number = Date.now();
   private currentLocation: LocationData | null = null;
 
+  /**
+   * Creates a new orchestrator instance
+   * @param container - HTML element to render the visualization into
+   */
   constructor(container: HTMLElement) {
     this.ephemeris = new EphemerisAgent();
     this.sensor = new SensorAgent();
@@ -36,6 +63,9 @@ export class OrchestratorAgent {
 
   /**
    * Initialize the application flow
+   * Checks for cached location data and begins rendering if available,
+   * otherwise waits for explicit location request
+   * @throws Error if initialization fails
    */
   async initialize(): Promise<void> {
     try {
@@ -61,6 +91,8 @@ export class OrchestratorAgent {
 
   /**
    * Request and handle location permission
+   * Attempts to get user's location and computes sun position if successful
+   * @returns Promise that resolves to true if location was obtained, false otherwise
    */
   async requestLocation(): Promise<boolean> {
     try {
@@ -180,6 +212,9 @@ export class OrchestratorAgent {
 
   /**
    * Toggle between 2D and AR modes
+   * Switches between compass view (2D) and camera overlay (AR) visualization
+   * @returns Promise that resolves to the new mode ('2D' or 'AR')
+   * @throws Error if AR mode fails to start (camera not available)
    */
   async toggleRenderMode(): Promise<'2D' | 'AR'> {
     const targetMode = this.renderer.currentMode === '2D' ? 'AR' : '2D';
@@ -211,6 +246,8 @@ export class OrchestratorAgent {
 
   /**
    * Switch camera between front and back
+   * Only works in AR mode with multiple cameras available
+   * @returns Promise that resolves to true if camera was switched, false otherwise
    */
   async switchCamera(): Promise<boolean> {
     if (!this.currentStream || this.renderer.currentMode !== 'AR') {
@@ -266,6 +303,8 @@ export class OrchestratorAgent {
 
   /**
    * Subscribe to status updates
+   * Register a callback function to be notified when application status changes
+   * @param callback - Function to call with updated status
    */
   onStatusUpdate(callback: (status: AppStatus) => void): void {
     this.statusCallbacks.push(callback);
@@ -273,6 +312,7 @@ export class OrchestratorAgent {
 
   /**
    * Get current status
+   * @returns A copy of the current application status
    */
   getStatus(): AppStatus {
     return { ...this.status };
@@ -280,6 +320,9 @@ export class OrchestratorAgent {
 
   /**
    * Plan execution graph based on capabilities
+   * Determines the sequence of operations based on available device sensors
+   * @param capabilities - Object describing available sensors (location, orientation, camera)
+   * @returns Array of operation names representing the execution plan
    */
   planGraph(capabilities: { location: boolean; orientation: boolean; camera: boolean }): string[] {
     const plan: string[] = ['init'];
@@ -306,6 +349,9 @@ export class OrchestratorAgent {
 
   /**
    * Select fallback mode based on confidence
+   * Determines the appropriate degraded mode when full functionality is unavailable
+   * @param confidence - Current confidence level (0-100)
+   * @returns Recommended fallback mode
    */
   selectFallback(confidence: number): 'manual' | '2d' | 'demo' {
     if (confidence < 30) {
@@ -319,6 +365,8 @@ export class OrchestratorAgent {
 
   /**
    * Set time for celestial calculations
+   * Updates the visualization to show sun/moon positions at a specific time
+   * @param timestamp - Unix timestamp in milliseconds
    */
   setTime(timestamp: number): void {
     this.currentTimestamp = timestamp;
@@ -329,6 +377,8 @@ export class OrchestratorAgent {
 
   /**
    * Jump to next sunrise
+   * Advances time to the next sunrise event and updates the visualization
+   * @returns Object with sunrise time and azimuth, or null if not found
    */
   jumpToNextSunrise(): { time: number; azimuth: number } | null {
     if (!this.currentLocation) return null;
@@ -349,6 +399,8 @@ export class OrchestratorAgent {
 
   /**
    * Jump to next sunset
+   * Advances time to the next sunset event and updates the visualization
+   * @returns Object with sunset time and azimuth, or null if not found
    */
   jumpToNextSunset(): { time: number; azimuth: number } | null {
     if (!this.currentLocation) return null;
@@ -369,6 +421,7 @@ export class OrchestratorAgent {
 
   /**
    * Return to current time
+   * Resets the visualization to show real-time sun/moon positions
    */
   returnToNow(): void {
     this.currentTimestamp = Date.now();
@@ -398,6 +451,7 @@ export class OrchestratorAgent {
 
   /**
    * Get current timestamp
+   * @returns Current timestamp being visualized (may differ from real-time)
    */
   getCurrentTimestamp(): number {
     return this.currentTimestamp;
@@ -405,6 +459,7 @@ export class OrchestratorAgent {
 
   /**
    * Get current location
+   * @returns Current user location or null if not available
    */
   getCurrentLocation(): LocationData | null {
     return this.currentLocation;
@@ -412,6 +467,8 @@ export class OrchestratorAgent {
 
   /**
    * Dispose of resources
+   * Cleans up all rendering resources and stops animation loops
+   * Should be called when the orchestrator is no longer needed
    */
   dispose(): void {
     this.renderer.dispose();
